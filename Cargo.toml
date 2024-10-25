@@ -1,0 +1,28 @@
+[package]
+name = "project_odyssey"
+version = "0.1.0"
+edition = "2021"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+
+[profile.release]
+lto = true
+opt-level = 3
+codegen-units = 1
+debug = false
+
+# for Windows
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld.exe"
+
+[dependencies]
+bevy = "0.14.2"
+bevy-inspector-egui = "0.27.0"
+derivative = "2.2.0"
+iyes_perf_ui = "0.3.0"
+leafwing-input-manager = "0.15.1"
