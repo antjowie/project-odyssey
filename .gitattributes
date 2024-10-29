@@ -1,0 +1,56 @@
+# Source code
+*.rs text diff=rust eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+*.sh text eol=lf
+*.md text eol=lf
+
+# Web files (for WASM builds)
+*.js linguist-generated=true
+*.js text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.wasm binary
+
+# Bevy common asset types
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+
+# Audio files
+*.wav binary
+*.mp3 binary
+*.ogg binary
+*.flac binary
+
+# 3D model files
+*.gltf text eol=lf
+*.glb binary
+*.fbx binary
+*.obj text eol=lf
+*.mtl text eol=lf
+
+# Font files
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+
+# Shader files
+*.wgsl text eol=lf
+*.vert text eol=lf
+*.frag text eol=lf
+
+# Build output and dependencies
+target/ binary
+out/ binary
+dist/ binary
+
+# Git LFS (if you have large assets, uncomment these)
+# *.png filter=lfs diff=lfs merge=lfs -text
+# *.jpg filter=lfs diff=lfs merge=lfs -text
+# *.glb filter=lfs diff=lfs merge=lfs -text
+# *.fbx filter=lfs diff=lfs merge=lfs -text

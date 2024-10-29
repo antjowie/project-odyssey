@@ -11,6 +11,10 @@ impl Plugin for CameraPlugin {
         app.register_type::<PanOrbitCameraState>();
         app.register_type::<PanOrbitCameraSettings>();
     }
+
+    fn name(&self) -> &str {
+        "CameraPlugin"
+    }
 }
 
 // This is the list of "things in the game I want to be able to do based on input"
@@ -73,14 +77,21 @@ pub struct PanOrbitCameraSettings {
 
 impl Default for PanOrbitCameraSettings {
     fn default() -> Self {
-        PanOrbitCameraSettings {
+        let mut value = PanOrbitCameraSettings {
             acceleration: 1000.0,
             max_speed: 100.0,
             orbit_sensitivity: 0.01,
             radius_sensitivity: 10.0,
             min_radius: 10.0,
             max_radius: 1000.0,
+        };
+
+        // Not sure why, but for some reason on wasm it is just way faster
+        if cfg!(target_arch = "wasm32") {
+            value.radius_sensitivity *= 0.1;
         }
+
+        value
     }
 }
 

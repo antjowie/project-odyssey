@@ -8,13 +8,20 @@ pub struct DebugPlugin;
 impl Plugin for DebugPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_debug);
-        app.add_plugins(PerfUiPlugin);
-        app.add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin);
-        app.add_plugins(bevy::diagnostic::EntityCountDiagnosticsPlugin);
-        app.add_plugins(bevy::diagnostic::SystemInformationDiagnosticsPlugin);
+        #[cfg(not(target_arch = "wasm32"))]
+        app.add_plugins((
+            PerfUiPlugin,
+            bevy::diagnostic::FrameTimeDiagnosticsPlugin,
+            bevy::diagnostic::EntityCountDiagnosticsPlugin,
+            bevy::diagnostic::SystemInformationDiagnosticsPlugin,
+        ));
         app.add_plugins(
             WorldInspectorPlugin::default().run_if(input_toggle_active(true, KeyCode::Delete)),
         );
+    }
+
+    fn name(&self) -> &str {
+        "DebugPlugin"
     }
 }
 
