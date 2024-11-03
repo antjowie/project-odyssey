@@ -33,12 +33,12 @@ jobs: # here we are specifing all of the jobs
       # Handle build
       - name: Build wasm
         run: |
-          cargo build --release --target wasm32-unknown-unknown
+          cargo build --profile release-wasm --target wasm32-unknown-unknown
           wasm-bindgen --out-dir ./out/ --target web ./target/wasm32-unknown-unknown/release/project_odyssey.wasm
       - name: Optimize wasm for size
         uses: NiklasEi/wasm-opt-action@v2
         with:
-          file: out/project_odyssey_bg.wasm
+          file: out/*.wasm
 
       # Handle deploy
       - name: Copy

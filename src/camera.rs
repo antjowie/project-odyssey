@@ -1,12 +1,14 @@
 use bevy::prelude::*;
-use derivative::Derivative;
 use leafwing_input_manager::prelude::*;
 
 pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, update_camera);
+        app.add_systems(
+            Update,
+            update_pan_orbit_camera.run_if(any_with_component::<PanOrbitCameraState>),
+        );
         app.add_plugins(InputManagerPlugin::<CameraAction>::default());
         app.register_type::<PanOrbitCameraState>();
         app.register_type::<PanOrbitCameraSettings>();
@@ -51,18 +53,28 @@ pub struct PanOrbitCameraBundle {
     pub input: InputManagerBundle<CameraAction>,
 }
 
-#[derive(Reflect, Component, Derivative)]
-#[derivative(Default)]
+#[derive(Reflect, Component)]
 pub struct PanOrbitCameraState {
     center: Vec3,
     velocity: Vec3,
-    #[derivative(Default(value = "50.0"))]
     radius: f32,
-    #[derivative(Default(value = "50.0"))]
     desired_radius: f32,
-    #[derivative(Default(value = "-0.7"))]
     pitch: f32,
     yaw: f32,
+}
+
+impl Default for PanOrbitCameraState {
+    fn default() -> Self {
+        const RADIUS: f32 = 500.0;
+        PanOrbitCameraState {
+            center: Vec3::ZERO,
+            velocity: Vec3::ZERO,
+            radius: RADIUS,
+            desired_radius: RADIUS,
+            pitch: -45.0_f32.to_radians(),
+            yaw: 0.0,
+        }
+    }
 }
 
 #[derive(Reflect, Component)]
@@ -95,7 +107,7 @@ impl Default for PanOrbitCameraSettings {
     }
 }
 
-fn update_camera(
+fn update_pan_orbit_camera(
     mut q: Query<(
         &ActionState<CameraAction>,
         &PanOrbitCameraSettings,

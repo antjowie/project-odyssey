@@ -23,9 +23,11 @@ MS2 - gameplay progression
 
 
 ### Build
-* Run `run.bat` or `cargo run --features bevy/dynamic_linking` for fastest iteration times
-* Run `cargo run --release` for shipping build
-* For testing web builds first install `cargo install wasm-server-runner` then `run_web.bat`
+You can use cargo as you always would, simply `cargo run` would suffice.
+
+For some different options you can check [run.bat](run.bat) which I use when developing:
+* Run `run.bat` for fastest iteration times
+* For testing web builds first install `cargo install wasm-server-runner` then `run.bat web`
 
 ### Attaching debugger
 I use VSCode for development. If you want to attach a debugger you can F5. Make sure `stable-x86_64-pc-windows-msvc` is installed (run `rustup toolchain list`) or check [launch.json](.vscode/launch.json) to update according to your needs
