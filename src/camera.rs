@@ -41,7 +41,9 @@ impl CameraAction {
                 CameraAction::Pan,
                 DualAxislikeChord::new(MouseButton::Right, MouseMove::default().inverted()),
             )
-            .with_axis(CameraAction::Zoom, MouseScrollAxis::Y.inverted())
+            // We use Digital to avoid inconsistencies between platform
+            // On windows our pixel value is 1, but on web it is 100 (or 125 if you use Windows scaling)
+            .with_axis(CameraAction::Zoom, MouseScrollAxis::Y.inverted().digital())
     }
 }
 
@@ -89,21 +91,14 @@ pub struct PanOrbitCameraSettings {
 
 impl Default for PanOrbitCameraSettings {
     fn default() -> Self {
-        let mut value = PanOrbitCameraSettings {
+        PanOrbitCameraSettings {
             acceleration: 1000.0,
             max_speed: 100.0,
             orbit_sensitivity: 0.01,
-            radius_sensitivity: 10.0,
+            radius_sensitivity: 40.0,
             min_radius: 10.0,
             max_radius: 1000.0,
-        };
-
-        // Not sure why, but for some reason on wasm it is just way faster
-        if cfg!(target_arch = "wasm32") {
-            value.radius_sensitivity *= 0.1;
         }
-
-        value
     }
 }
 
@@ -116,40 +111,42 @@ fn update_pan_orbit_camera(
     )>,
     time: Res<Time>,
 ) {
-    for (&ref input, &ref settings, mut t, mut state) in &mut q {
-        // Calculate rotation
-        let direction = input.axis_pair(&CameraAction::Pan) * settings.orbit_sensitivity;
-        state.yaw += direction.x;
-        state.pitch += direction.y;
-        state.pitch = state
-            .pitch
-            .clamp(-89.0_f32.to_radians(), -10.0_f32.to_radians());
-        let rotation = Quat::from_euler(EulerRot::YXZ, state.yaw, state.pitch, 0.0);
+    const RADIUS_LERP_RATE: f32 = 50.0;
 
-        // Calculate translation
-        let direction = input.axis_pair(&CameraAction::Translate);
-        let direction =
-            Quat::from_axis_angle(Vec3::Y, state.yaw) * Vec3::new(direction.x, 0.0, direction.y);
-        let desired_velocity = direction.normalize_or_zero() * settings.max_speed;
+    q.iter_mut()
+        .for_each(|(input, settings, mut t, mut state)| {
+            // Calculate rotation
+            let direction = input.axis_pair(&CameraAction::Pan) * settings.orbit_sensitivity;
+            state.yaw += direction.x;
+            state.pitch += direction.y;
+            state.pitch = state
+                .pitch
+                .clamp(-89.0_f32.to_radians(), -10.0_f32.to_radians());
+            let rotation = Quat::from_euler(EulerRot::YXZ, state.yaw, state.pitch, 0.0);
 
-        state.velocity = state.velocity.move_towards(
-            desired_velocity,
-            settings.acceleration * time.delta_seconds(),
-        );
-        state.center = state.center + state.velocity * time.delta_seconds();
+            // Calculate translation
+            let direction = input.axis_pair(&CameraAction::Translate);
+            let direction = Quat::from_axis_angle(Vec3::Y, state.yaw)
+                * Vec3::new(direction.x, 0.0, direction.y);
+            let desired_velocity = direction.normalize_or_zero() * settings.max_speed;
 
-        // Calculate radius
-        state.desired_radius += input.value(&CameraAction::Zoom) * settings.radius_sensitivity;
-        state.desired_radius = state
-            .desired_radius
-            .clamp(settings.min_radius, settings.max_radius);
-        let alpha = (time.delta_seconds() * 50.0).min(1.0);
+            state.velocity = state.velocity.move_towards(
+                desired_velocity,
+                settings.acceleration * time.delta_seconds(),
+            );
+            state.center = state.center + state.velocity * time.delta_seconds();
 
-        state.radius = state.radius.lerp(state.desired_radius, alpha);
+            // Calculate radius
+            state.desired_radius += input.value(&CameraAction::Zoom) * settings.radius_sensitivity;
+            state.desired_radius = state
+                .desired_radius
+                .clamp(settings.min_radius, settings.max_radius);
+            let alpha = (time.delta_seconds() * RADIUS_LERP_RATE).min(1.0);
+            state.radius = state.radius.lerp(state.desired_radius, alpha);
 
-        // Apply state to transform
-        let offset = rotation * Vec3::Z * state.radius;
-        t.translation = state.center + offset;
-        t.rotation = rotation;
-    }
+            // Apply state to transform
+            let offset = rotation * Vec3::Z * state.radius;
+            t.translation = state.center + offset;
+            t.rotation = rotation;
+        });
 }

@@ -34,7 +34,7 @@ jobs: # here we are specifing all of the jobs
       - name: Build wasm
         run: |
           cargo build --profile release-wasm --target wasm32-unknown-unknown
-          wasm-bindgen --out-dir ./out/ --target web ./target/wasm32-unknown-unknown/release/project_odyssey.wasm
+          wasm-bindgen --out-dir ./out/ --target web ./target/wasm32-unknown-unknown/release-wasm/project_odyssey.wasm
       - name: Optimize wasm for size
         uses: NiklasEi/wasm-opt-action@v2
         with:
