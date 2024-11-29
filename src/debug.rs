@@ -20,10 +20,6 @@ impl Plugin for DebugPlugin {
             WorldInspectorPlugin::default().run_if(input_toggle_active(true, KeyCode::Delete)),
         );
     }
-
-    fn name(&self) -> &str {
-        "DebugPlugin"
-    }
 }
 
 fn close(mut exit: EventWriter<AppExit>) {

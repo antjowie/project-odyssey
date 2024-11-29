@@ -12,10 +12,6 @@ impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_world);
     }
-
-    fn name(&self) -> &str {
-        "WorldPlugin"
-    }
 }
 
 fn setup_world(
