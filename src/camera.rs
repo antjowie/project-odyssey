@@ -54,16 +54,16 @@ pub struct PanOrbitCameraBundle {
 
 #[derive(Reflect, Component)]
 pub struct PanOrbitCameraState {
-    center: Vec3,
-    velocity: Vec3,
-    radius: f32,
+    pub center: Vec3,
+    pub velocity: Vec3,
+    pub radius: f32,
     // Zoom is a normalized value representing the user's desired amount of content to see.
     // Radius is not linear and calculated from zoom.
     // 0 zoom == max radius
     // 1 zoom == min radius
-    zoom: f32,
-    pitch: f32,
-    yaw: f32,
+    pub zoom: f32,
+    pub pitch: f32,
+    pub yaw: f32,
 }
 
 impl Default for PanOrbitCameraState {
@@ -87,15 +87,15 @@ impl Default for PanOrbitCameraState {
 
 #[derive(Reflect, Component)]
 pub struct PanOrbitCameraSettings {
-    acceleration: f32,
+    pub acceleration: f32,
     // The max speed we want when fully zoomed in
-    max_speed_zoomed: f32,
+    pub max_speed_zoomed: f32,
     // The max speed we want when fully zoomed out
-    max_speed: f32,
-    orbit_sensitivity: f32,
-    zoom_sensitivity: f32,
-    min_radius: f32,
-    max_radius: f32,
+    pub max_speed: f32,
+    pub orbit_sensitivity: f32,
+    pub zoom_sensitivity: f32,
+    pub min_radius: f32,
+    pub max_radius: f32,
 }
 
 impl Default for PanOrbitCameraSettings {
@@ -156,19 +156,16 @@ fn update_pan_orbit_camera(
             // If we zoom with mkb we want to zoom towards cursor pos
             let mut center_zoom_offset = Vec3::ZERO;
             if radius_delta != 0.0 {
-                if let Some(cursor_world_pos) = player_cursor.world_position {
-                    let norm_radius_delta = -radius_delta / (state.radius + settings.min_radius);
+                let norm_radius_delta = -radius_delta / (state.radius + settings.min_radius);
 
-                    let mut center_to_cursor = cursor_world_pos - state.center;
-                    const MAX_CENTER_TO_CURSOR_LENGTH: f32 = 100.0;
-                    center_to_cursor =
-                        center_to_cursor.clamp_length_max(MAX_CENTER_TO_CURSOR_LENGTH);
-                    center_zoom_offset = center_to_cursor * norm_radius_delta;
+                let mut center_to_cursor = player_cursor.world_pos - state.center;
+                const MAX_CENTER_TO_CURSOR_LENGTH: f32 = 100.0;
+                center_to_cursor = center_to_cursor.clamp_length_max(MAX_CENTER_TO_CURSOR_LENGTH);
+                center_zoom_offset = center_to_cursor * norm_radius_delta;
 
-                    // gizmos.ray(state.center, center_to_cursor, RED);
-                    // gizmos.sphere(cursor, Quat::IDENTITY, 10.0, RED);
-                    // gizmos.sphere(state.center, Quat::IDENTITY, 10.0, GREEN);
-                }
+                // gizmos.ray(state.center, center_to_cursor, RED);
+                // gizmos.sphere(cursor, Quat::IDENTITY, 10.0, RED);
+                // gizmos.sphere(state.center, Quat::IDENTITY, 10.0, GREEN);
             }
 
             // Calculate translation
