@@ -1,3 +1,4 @@
+use crate::game::*;
 use bevy::prelude::*;
 use leafwing_input_manager::prelude::*;
 
@@ -117,21 +118,19 @@ fn calculate_desired_radius(zoom: f32, min_radius: f32, max_radius: f32) -> f32 
 
 fn update_pan_orbit_camera(
     // mut gizmos: Gizmos,
-    windows: Query<&Window>,
     mut q: Query<(
-        &Camera,
         &ActionState<CameraAction>,
         &PanOrbitCameraSettings,
         &mut Transform,
         &mut PanOrbitCameraState,
-        &GlobalTransform,
     )>,
+    player_cursors: Query<&PlayerCursor>,
     time: Res<Time>,
 ) {
-    let window = windows.single();
+    let player_cursor = player_cursors.single();
 
-    q.iter_mut().for_each(
-        |(camera, input, settings, mut t, mut state, global_transform)| {
+    q.iter_mut()
+        .for_each(|(input, settings, mut t, mut state)| {
             // Calculate rotation
             let direction = input.axis_pair(&CameraAction::Pan) * settings.orbit_sensitivity;
             state.yaw += direction.x;
@@ -157,29 +156,18 @@ fn update_pan_orbit_camera(
             // If we zoom with mkb we want to zoom towards cursor pos
             let mut center_zoom_offset = Vec3::ZERO;
             if radius_delta != 0.0 {
-                // Check if cursor is in window
-                if let Some(ray) = window
-                    .cursor_position()
-                    .and_then(|cursor| camera.viewport_to_world(global_transform, cursor))
-                {
-                    // Check if cursor intersects ground
-                    if let Some(len) =
-                        ray.intersect_plane(Vec3::ZERO, InfinitePlane3d::new(Vec3::Y))
-                    {
-                        let norm_radius_delta =
-                            -radius_delta / (state.radius + settings.min_radius);
+                if let Some(cursor_world_pos) = player_cursor.world_position {
+                    let norm_radius_delta = -radius_delta / (state.radius + settings.min_radius);
 
-                        let cursor = ray.origin + ray.direction * len;
-                        let mut center_to_cursor = cursor - state.center;
-                        const MAX_CENTER_TO_CURSOR_LENGTH: f32 = 100.0;
-                        center_to_cursor =
-                            center_to_cursor.clamp_length_max(MAX_CENTER_TO_CURSOR_LENGTH);
-                        center_zoom_offset = center_to_cursor * norm_radius_delta;
+                    let mut center_to_cursor = cursor_world_pos - state.center;
+                    const MAX_CENTER_TO_CURSOR_LENGTH: f32 = 100.0;
+                    center_to_cursor =
+                        center_to_cursor.clamp_length_max(MAX_CENTER_TO_CURSOR_LENGTH);
+                    center_zoom_offset = center_to_cursor * norm_radius_delta;
 
-                        // gizmos.ray(state.center, center_to_cursor, RED);
-                        // gizmos.sphere(cursor, Quat::IDENTITY, 10.0, RED);
-                        // gizmos.sphere(state.center, Quat::IDENTITY, 10.0, GREEN);
-                    }
+                    // gizmos.ray(state.center, center_to_cursor, RED);
+                    // gizmos.sphere(cursor, Quat::IDENTITY, 10.0, RED);
+                    // gizmos.sphere(state.center, Quat::IDENTITY, 10.0, GREEN);
                 }
             }
 
@@ -204,6 +192,5 @@ fn update_pan_orbit_camera(
             let offset = rotation * Vec3::Z * state.radius;
             t.translation = state.center + offset;
             t.rotation = rotation;
-        },
-    );
+        });
 }

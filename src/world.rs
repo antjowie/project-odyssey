@@ -1,10 +1,11 @@
+use crate::camera::*;
+use crate::game::*;
+
 use bevy::{
     pbr::{CascadeShadowConfigBuilder, NotShadowCaster},
     prelude::*,
 };
 use leafwing_input_manager::prelude::*;
-
-use crate::camera;
 
 pub struct WorldPlugin;
 
@@ -19,12 +20,17 @@ fn setup_world(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    // --- Gameplay
+    // Player State
+    c.spawn(PlayerStateBundle::default());
+
     // Camera
-    c.spawn(camera::PanOrbitCameraBundle {
-        input: InputManagerBundle::with_map(camera::CameraAction::default_player_mapping()),
+    c.spawn(PanOrbitCameraBundle {
+        input: InputManagerBundle::with_map(CameraAction::default_player_mapping()),
         ..default()
     });
 
+    // --- Visuals
     // Fog
     c.spawn(FogSettings {
         color: Color::srgba(0.35, 0.48, 0.66, 1.0),

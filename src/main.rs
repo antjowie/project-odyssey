@@ -1,5 +1,6 @@
 mod camera;
 mod debug;
+mod game;
 mod world;
 
 use bevy::prelude::*;
@@ -18,6 +19,7 @@ fn main() {
         ))
         .add_plugins(camera::CameraPlugin)
         .add_plugins(debug::DebugPlugin)
+        .add_plugins(game::GamePlugin)
         .add_plugins(world::WorldPlugin)
         .run();
 }
