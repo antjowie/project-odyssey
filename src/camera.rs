@@ -60,19 +60,22 @@ pub struct PanOrbitCameraState {
     center: Vec3,
     velocity: Vec3,
     radius: f32,
-    desired_radius: f32,
+    // Zoom is a normalized value representing the user's desired amount of content to see.
+    // Radius is not linear and calculated from zoom.
+    // 0 zoom == max radius
+    // 1 zoom == min radius
+    zoom: f32,
     pitch: f32,
     yaw: f32,
 }
 
 impl Default for PanOrbitCameraState {
     fn default() -> Self {
-        const RADIUS: f32 = 500.0;
         PanOrbitCameraState {
             center: Vec3::ZERO,
             velocity: Vec3::ZERO,
-            radius: RADIUS,
-            desired_radius: RADIUS,
+            radius: 500.0,
+            zoom: 0.5,
             pitch: -45.0_f32.to_radians(),
             yaw: 0.0,
         }
@@ -82,9 +85,12 @@ impl Default for PanOrbitCameraState {
 #[derive(Reflect, Component)]
 pub struct PanOrbitCameraSettings {
     acceleration: f32,
+    // The max speed we want when fully zoomed in
+    max_speed_zoomed: f32,
+    // The max speed we want when fully zoomed out
     max_speed: f32,
     orbit_sensitivity: f32,
-    radius_sensitivity: f32,
+    zoom_sensitivity: f32,
     min_radius: f32,
     max_radius: f32,
 }
@@ -93,9 +99,10 @@ impl Default for PanOrbitCameraSettings {
     fn default() -> Self {
         PanOrbitCameraSettings {
             acceleration: 1000.0,
+            max_speed_zoomed: 10.0,
             max_speed: 100.0,
             orbit_sensitivity: 0.01,
-            radius_sensitivity: 40.0,
+            zoom_sensitivity: 0.1,
             min_radius: 10.0,
             max_radius: 1000.0,
         }
@@ -111,8 +118,6 @@ fn update_pan_orbit_camera(
     )>,
     time: Res<Time>,
 ) {
-    const RADIUS_LERP_RATE: f32 = 50.0;
-
     q.iter_mut()
         .for_each(|(input, settings, mut t, mut state)| {
             // Calculate rotation
@@ -128,7 +133,10 @@ fn update_pan_orbit_camera(
             let direction = input.axis_pair(&CameraAction::Translate);
             let direction = Quat::from_axis_angle(Vec3::Y, state.yaw)
                 * Vec3::new(direction.x, 0.0, direction.y);
-            let desired_velocity = direction.normalize_or_zero() * settings.max_speed;
+            let desired_velocity = direction.normalize_or_zero()
+                * settings
+                    .max_speed_zoomed
+                    .lerp(settings.max_speed, state.zoom);
 
             state.velocity = state.velocity.move_towards(
                 desired_velocity,
@@ -137,12 +145,16 @@ fn update_pan_orbit_camera(
             state.center = state.center + state.velocity * time.delta_seconds();
 
             // Calculate radius
-            state.desired_radius += input.value(&CameraAction::Zoom) * settings.radius_sensitivity;
-            state.desired_radius = state
-                .desired_radius
-                .clamp(settings.min_radius, settings.max_radius);
+            state.zoom += input.value(&CameraAction::Zoom) * settings.zoom_sensitivity;
+            state.zoom = state.zoom.clamp(0.0, 1.0);
+
+            let desired_radius = settings
+                .min_radius
+                .lerp(settings.max_radius, state.zoom.powi(2));
+            const RADIUS_LERP_RATE: f32 = 50.0;
             let alpha = (time.delta_seconds() * RADIUS_LERP_RATE).min(1.0);
-            state.radius = state.radius.lerp(state.desired_radius, alpha);
+
+            state.radius = state.radius.lerp(desired_radius, alpha);
 
             // Apply state to transform
             let offset = rotation * Vec3::Z * state.radius;

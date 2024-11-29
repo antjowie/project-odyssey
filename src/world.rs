@@ -80,8 +80,18 @@ fn setup_world(
 
     // Terrain
     c.spawn(PbrBundle {
-        mesh: meshes.add(Plane3d::new(Vec3::Y, Vec2::splat(100.0))),
+        mesh: meshes.add(Plane3d::new(Vec3::Y, Vec2::splat(100_000.0))),
         material: materials.add(Color::WHITE),
         ..default()
     });
+
+    for i in 0..10 {
+        const LEN: f32 = 1.0;
+        c.spawn(PbrBundle {
+            mesh: meshes.add(Cuboid::from_length(LEN)),
+            material: materials.add(Color::BLACK),
+            transform: Transform::from_translation(Vec3::new(LEN * 2.0 * i as f32, 0.0, 0.0)),
+            ..default()
+        });
+    }
 }
