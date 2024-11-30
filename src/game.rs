@@ -1,6 +1,6 @@
 use std::f32::consts::PI;
 
-use bevy::{color::palettes::css::GREY, prelude::*};
+use bevy::prelude::*;
 use leafwing_input_manager::prelude::*;
 
 use crate::camera::PanOrbitCameraState;
@@ -11,8 +11,16 @@ pub struct GamePlugin;
 
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
+        app.add_plugins(InputManagerPlugin::<PlayerAction>::default());
         app.add_systems(PreUpdate, update_cursor);
-        app.add_systems(Update, process_build_mode);
+        app.add_systems(
+            Update,
+            process_view_state.run_if(in_player_state(PlayerState::Viewing)),
+        );
+        app.add_systems(
+            Update,
+            process_build_state.run_if(in_player_state(PlayerState::Building)),
+        );
     }
 }
 
@@ -21,8 +29,22 @@ pub struct NetOwner;
 
 #[derive(Bundle, Default)]
 pub struct PlayerStateBundle {
+    pub state: PlayerState,
     pub cursor: PlayerCursor,
-    pub build_actions: ActionState<BuildAction>,
+    pub input: InputManagerBundle<PlayerAction>,
+}
+
+#[derive(Component, Default, PartialEq)]
+pub enum PlayerState {
+    #[default]
+    Viewing,
+    Building,
+}
+
+pub fn in_player_state(
+    state: PlayerState,
+) -> impl FnMut(Query<&PlayerState, With<NetOwner>>) -> bool {
+    move |query: Query<&PlayerState, With<NetOwner>>| *query.single() == state
 }
 
 /// Component that tracks the cursor position
@@ -64,25 +86,46 @@ fn update_cursor(
 
 // This is the list of "things in the game I want to be able to do based on input"
 #[derive(Actionlike, PartialEq, Eq, Hash, Clone, Copy, Debug, Reflect)]
-pub enum BuildAction {
-    Build,
+pub enum PlayerAction {
+    Interact,
+    Cancel,
 }
 
-fn process_build_mode(
-    mut gizmos: Gizmos,
-    cursor: Query<&PlayerCursor, With<NetOwner>>,
-    q: Query<&ActionState<BuildAction>>,
-) {
-    let cursor = cursor.single();
+impl PlayerAction {
+    pub fn default_player_mapping() -> InputMap<PlayerAction> {
+        InputMap::default()
+            .with(PlayerAction::Interact, MouseButton::Left)
+            .with(PlayerAction::Cancel, KeyCode::KeyE)
+            .with(PlayerAction::Cancel, KeyCode::Escape)
+    }
+}
 
-    return;
-    q.iter().for_each(|input| {
-        gizmos.grid(
-            Vec3::new(cursor.world_grid_pos.x, -cursor.world_grid_pos.z, 0.1),
-            Quat::from_axis_angle(Vec3::X, -PI * 0.5),
-            UVec2::splat(512),
-            Vec2::splat(1.0),
-            GREY,
-        );
-    });
+fn process_view_state(
+    mut q: Query<(&mut PlayerState, &ActionState<PlayerAction>), With<NetOwner>>,
+) {
+    let (mut state, input) = q.single_mut();
+
+    if input.just_pressed(&PlayerAction::Interact) {
+        *state = PlayerState::Building;
+    }
+}
+
+fn process_build_state(
+    mut gizmos: Gizmos,
+    mut q: Query<(&mut PlayerState, &PlayerCursor, &ActionState<PlayerAction>), With<NetOwner>>,
+) {
+    let (mut state, cursor, input) = q.single_mut();
+
+    gizmos.grid(
+        Vec3::new(cursor.world_grid_pos.x, -cursor.world_grid_pos.z, 0.1),
+        Quat::from_axis_angle(Vec3::X, -PI * 0.5),
+        UVec2::splat(512),
+        Vec2::splat(1.0),
+        Color::srgba(0.8, 0.8, 0.8, 0.3),
+    );
+
+    if input.just_pressed(&PlayerAction::Interact) {
+    } else if input.just_pressed(&PlayerAction::Cancel) {
+        *state = PlayerState::Viewing;
+    }
 }

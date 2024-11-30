@@ -24,7 +24,13 @@ fn setup_world(
 ) {
     // --- Gameplay
     // Player State
-    c.spawn((NetOwner, PlayerStateBundle::default()));
+    c.spawn((
+        NetOwner,
+        PlayerStateBundle {
+            input: InputManagerBundle::with_map(PlayerAction::default_player_mapping()),
+            ..default()
+        },
+    ));
 
     // Camera
     c.spawn((
@@ -93,11 +99,13 @@ fn setup_world(
         ..default()
     });
 
+    const LEN: f32 = 2.0;
+    let mesh = meshes.add(Cuboid::from_length(LEN));
+    let material = materials.add(Color::BLACK);
     for i in 0..10 {
-        const LEN: f32 = 2.0;
         c.spawn(PbrBundle {
-            mesh: meshes.add(Cuboid::from_length(LEN)),
-            material: materials.add(Color::BLACK),
+            mesh: mesh.clone(),
+            material: material.clone(),
             transform: Transform::from_translation(Vec3::new(LEN * 2.0 * i as f32, LEN * 0.5, 0.0)),
             ..default()
         });
