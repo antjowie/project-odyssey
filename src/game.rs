@@ -1,6 +1,6 @@
 use std::f32::consts::PI;
 
-use bevy::prelude::*;
+use bevy::{prelude::*, window::PrimaryWindow};
 use leafwing_input_manager::prelude::*;
 
 use crate::camera::PanOrbitCameraState;
@@ -56,7 +56,7 @@ pub struct PlayerCursor {
 }
 
 fn update_cursor(
-    windows: Query<&Window>,
+    windows: Query<&Window, With<PrimaryWindow>>,
     cameras: Query<(&PanOrbitCameraState, &Camera, &GlobalTransform)>,
     mut q: Query<&mut PlayerCursor, With<NetOwner>>,
 ) {

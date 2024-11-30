@@ -1,5 +1,8 @@
 use crate::game::*;
-use bevy::prelude::*;
+use bevy::{
+    prelude::*,
+    window::{CursorGrabMode, PrimaryWindow},
+};
 use leafwing_input_manager::prelude::*;
 
 pub struct CameraPlugin;
@@ -8,7 +11,8 @@ impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            update_pan_orbit_camera.run_if(any_with_component::<PanOrbitCameraState>),
+            // (update_pan_orbit_camera, grab_cursor)
+            (update_pan_orbit_camera).run_if(any_with_component::<PanOrbitCameraState>),
         );
         app.add_plugins(InputManagerPlugin::<CameraAction>::default());
         app.register_type::<PanOrbitCameraState>();
@@ -114,6 +118,35 @@ impl Default for PanOrbitCameraSettings {
 
 fn calculate_desired_radius(zoom: f32, min_radius: f32, max_radius: f32) -> f32 {
     min_radius.lerp(max_radius, zoom.powi(2))
+}
+
+#[derive(Default)]
+struct CursorPos(Option<Vec2>);
+
+fn grab_cursor(
+    mut windows: Query<&mut Window, With<PrimaryWindow>>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    mut cursor_pos: Local<CursorPos>,
+) {
+    let mut window = windows.single_mut();
+    let visible = window.cursor.visible;
+    let desired_visible = !buttons.pressed(MouseButton::Right);
+
+    if visible != desired_visible {
+        if visible {
+            cursor_pos.0 = window.cursor_position();
+            window.cursor.grab_mode = CursorGrabMode::Locked;
+            window.cursor.visible = false;
+            info!("{:?}", cursor_pos.0);
+        } else {
+            info!("{:?}", cursor_pos.0);
+            window.cursor.grab_mode = CursorGrabMode::None;
+            window.cursor.visible = true;
+            window.set_cursor_position(cursor_pos.0);
+            cursor_pos.0 = None;
+        }
+    }
+    window.set_cursor_position(cursor_pos.0);
 }
 
 fn update_pan_orbit_camera(
