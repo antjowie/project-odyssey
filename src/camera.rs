@@ -11,7 +11,9 @@ impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
+            // Grab Cursor will likely need a software cursor, cuz the harware impl seems to not have a lot of parity
             // (update_pan_orbit_camera, grab_cursor)
+            //     .run_if(any_with_component::<PanOrbitCameraState>),
             (update_pan_orbit_camera).run_if(any_with_component::<PanOrbitCameraState>),
         );
         app.add_plugins(InputManagerPlugin::<CameraAction>::default());
@@ -129,19 +131,19 @@ fn grab_cursor(
     mut cursor_pos: Local<CursorPos>,
 ) {
     let mut window = windows.single_mut();
-    let visible = window.cursor.visible;
-    let desired_visible = !buttons.pressed(MouseButton::Right);
+    let is_grabbed = window.cursor.grab_mode == CursorGrabMode::Locked;
+    let should_grab = buttons.pressed(MouseButton::Right);
 
-    if visible != desired_visible {
-        if visible {
+    if is_grabbed != should_grab {
+        if should_grab {
             cursor_pos.0 = window.cursor_position();
             window.cursor.grab_mode = CursorGrabMode::Locked;
-            window.cursor.visible = false;
+            // window.cursor.visible = false;
             info!("{:?}", cursor_pos.0);
         } else {
             info!("{:?}", cursor_pos.0);
             window.cursor.grab_mode = CursorGrabMode::None;
-            window.cursor.visible = true;
+            // window.cursor.visible = true;
             window.set_cursor_position(cursor_pos.0);
             cursor_pos.0 = None;
         }

@@ -27,7 +27,7 @@ fn setup_world(
     c.spawn((
         NetOwner,
         PlayerStateBundle {
-            input: InputManagerBundle::with_map(PlayerAction::default_player_mapping()),
+            input: InputManagerBundle::with_map(PlayerInput::default_player_mapping()),
             ..default()
         },
     ));

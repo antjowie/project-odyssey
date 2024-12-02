@@ -1,9 +1,12 @@
 use std::f32::consts::PI;
+use std::time::Duration;
 
+use bevy::time::common_conditions::on_timer;
 use bevy::{prelude::*, window::PrimaryWindow};
 use leafwing_input_manager::prelude::*;
 
-use crate::camera::PanOrbitCameraState;
+use crate::building::*;
+use crate::camera::*;
 
 /// All game systems and rules
 /// 100 units is 1 meter
@@ -11,15 +14,22 @@ pub struct GamePlugin;
 
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(InputManagerPlugin::<PlayerAction>::default());
+        app.add_plugins(InputManagerPlugin::<PlayerInput>::default());
+        app.add_event::<PlayerStateEvent>();
         app.add_systems(PreUpdate, update_cursor);
+        app.add_systems(Update, (process_state_change, create_building_preview));
+        // app.add_systems(
+        //     Update,
+        //     process_view_state_input.run_if(in_player_state(PlayerState::Viewing)),
+        // );
         app.add_systems(
             Update,
-            process_view_state.run_if(in_player_state(PlayerState::Viewing)),
-        );
-        app.add_systems(
-            Update,
-            process_build_state.run_if(in_player_state(PlayerState::Building)),
+            (
+                snap_building_preview_to_cursor,
+                validate_building_preview.run_if(on_timer(Duration::from_secs(1))),
+                draw_build_grid,
+            )
+                .run_if(in_player_state(PlayerState::Building)),
         );
     }
 }
@@ -31,10 +41,10 @@ pub struct NetOwner;
 pub struct PlayerStateBundle {
     pub state: PlayerState,
     pub cursor: PlayerCursor,
-    pub input: InputManagerBundle<PlayerAction>,
+    pub input: InputManagerBundle<PlayerInput>,
 }
 
-#[derive(Component, Default, PartialEq)]
+#[derive(Component, Default, PartialEq, Clone)]
 pub enum PlayerState {
     #[default]
     Viewing,
@@ -44,7 +54,13 @@ pub enum PlayerState {
 pub fn in_player_state(
     state: PlayerState,
 ) -> impl FnMut(Query<&PlayerState, With<NetOwner>>) -> bool {
-    move |query: Query<&PlayerState, With<NetOwner>>| *query.single() == state
+    move |query: Query<&PlayerState, With<NetOwner>>| !query.is_empty() && *query.single() == state
+}
+
+#[derive(Event)]
+pub struct PlayerStateEvent {
+    new_state: PlayerState,
+    old_state: PlayerState,
 }
 
 /// Component that tracks the cursor position
@@ -84,37 +100,92 @@ fn update_cursor(
     })
 }
 
-// This is the list of "things in the game I want to be able to do based on input"
 #[derive(Actionlike, PartialEq, Eq, Hash, Clone, Copy, Debug, Reflect)]
-pub enum PlayerAction {
+pub enum PlayerInput {
     Interact,
     Cancel,
+    Pause,
 }
 
-impl PlayerAction {
-    pub fn default_player_mapping() -> InputMap<PlayerAction> {
+impl PlayerInput {
+    pub fn default_player_mapping() -> InputMap<PlayerInput> {
         InputMap::default()
-            .with(PlayerAction::Interact, MouseButton::Left)
-            .with(PlayerAction::Cancel, KeyCode::KeyE)
-            .with(PlayerAction::Cancel, KeyCode::Escape)
+            .with(PlayerInput::Interact, MouseButton::Left)
+            .with(PlayerInput::Cancel, KeyCode::KeyE)
+            .with(PlayerInput::Cancel, KeyCode::Escape)
+            .with(PlayerInput::Pause, KeyCode::Escape)
     }
 }
 
-fn process_view_state(
-    mut q: Query<(&mut PlayerState, &ActionState<PlayerAction>), With<NetOwner>>,
+fn process_state_change(
+    mut q: Query<(&mut PlayerState, &ActionState<PlayerInput>), With<NetOwner>>,
+    mut ev_player_state: EventWriter<PlayerStateEvent>,
+    mut exit: EventWriter<AppExit>,
 ) {
     let (mut state, input) = q.single_mut();
+    let old_state = state.clone();
 
-    if input.just_pressed(&PlayerAction::Interact) {
-        *state = PlayerState::Building;
+    match *state {
+        PlayerState::Viewing => {
+            if input.just_pressed(&PlayerInput::Interact) {
+                *state = PlayerState::Building;
+            }
+
+            if input.just_pressed(&PlayerInput::Pause) {
+                exit.send(AppExit::Success);
+            }
+        }
+        PlayerState::Building => {
+            if input.just_pressed(&PlayerInput::Interact) {
+            } else if input.just_pressed(&PlayerInput::Cancel) {
+                *state = PlayerState::Viewing;
+            }
+        }
+    }
+
+    if *state != old_state {
+        ev_player_state.send(PlayerStateEvent {
+            old_state: old_state,
+            new_state: state.clone(),
+        });
     }
 }
 
-fn process_build_state(
-    mut gizmos: Gizmos,
-    mut q: Query<(&mut PlayerState, &PlayerCursor, &ActionState<PlayerAction>), With<NetOwner>>,
+fn create_building_preview(
+    q: Query<Entity, (With<NetOwner>, With<BuildingPreview>)>,
+    mut c: Commands,
+    mut event: EventReader<PlayerStateEvent>,
 ) {
-    let (mut state, cursor, input) = q.single_mut();
+    for e in event.read() {
+        if e.new_state == PlayerState::Building && e.old_state == PlayerState::Viewing {
+            c.add(SpawnRail { is_preview: true });
+        } else if e.new_state == PlayerState::Viewing && e.old_state == PlayerState::Building {
+            q.into_iter().for_each(|e| {
+                c.entity(e).despawn();
+            });
+        }
+    }
+}
+
+fn snap_building_preview_to_cursor(
+    mut q: Query<&mut Transform, (With<NetOwner>, With<BuildingPreview>)>,
+    cursor: Query<&PlayerCursor, With<NetOwner>>,
+) {
+    let cursor = cursor.single();
+
+    q.iter_mut().for_each(|mut transform| {
+        transform.translation = cursor.world_grid_pos;
+    });
+}
+
+fn validate_building_preview(mut q: Query<(&mut BuildingPreview), With<NetOwner>>) {
+    q.iter_mut().for_each(|(mut preview)| {
+        preview.valid = !preview.valid;
+    });
+}
+
+fn draw_build_grid(mut gizmos: Gizmos, q: Query<&PlayerCursor, With<NetOwner>>) {
+    let cursor = q.single();
 
     gizmos.grid(
         Vec3::new(cursor.world_grid_pos.x, -cursor.world_grid_pos.z, 0.1),
@@ -123,9 +194,4 @@ fn process_build_state(
         Vec2::splat(1.0),
         Color::srgba(0.8, 0.8, 0.8, 0.3),
     );
-
-    if input.just_pressed(&PlayerAction::Interact) {
-    } else if input.just_pressed(&PlayerAction::Cancel) {
-        *state = PlayerState::Viewing;
-    }
 }
