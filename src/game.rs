@@ -118,7 +118,9 @@ impl PlayerInput {
 }
 
 fn process_state_change(
+    mut c: Commands,
     mut q: Query<(&mut PlayerState, &ActionState<PlayerInput>), With<NetOwner>>,
+    preview: Query<Entity, (With<NetOwner>, With<BuildingPreview>)>,
     mut ev_player_state: EventWriter<PlayerStateEvent>,
     mut exit: EventWriter<AppExit>,
 ) {
@@ -137,6 +139,9 @@ fn process_state_change(
         }
         PlayerState::Building => {
             if input.just_pressed(&PlayerInput::Interact) {
+                preview.into_iter().for_each(|e| {
+                    c.entity(e).insert(PlaceBuildingPreview);
+                });
             } else if input.just_pressed(&PlayerInput::Cancel) {
                 *state = PlayerState::Viewing;
             }
@@ -158,7 +163,10 @@ fn create_building_preview(
 ) {
     for e in event.read() {
         if e.new_state == PlayerState::Building && e.old_state == PlayerState::Viewing {
-            c.add(SpawnRail { is_preview: true });
+            c.add(SpawnRail {
+                is_preview: true,
+                ..default()
+            });
         } else if e.new_state == PlayerState::Viewing && e.old_state == PlayerState::Building {
             q.into_iter().for_each(|e| {
                 c.entity(e).despawn();
@@ -178,8 +186,8 @@ fn snap_building_preview_to_cursor(
     });
 }
 
-fn validate_building_preview(mut q: Query<(&mut BuildingPreview), With<NetOwner>>) {
-    q.iter_mut().for_each(|(mut preview)| {
+fn validate_building_preview(mut q: Query<&mut BuildingPreview, With<NetOwner>>) {
+    q.iter_mut().for_each(|mut preview| {
         preview.valid = !preview.valid;
     });
 }
@@ -188,7 +196,7 @@ fn draw_build_grid(mut gizmos: Gizmos, q: Query<&PlayerCursor, With<NetOwner>>) 
     let cursor = q.single();
 
     gizmos.grid(
-        Vec3::new(cursor.world_grid_pos.x, -cursor.world_grid_pos.z, 0.1),
+        Vec3::new(cursor.world_grid_pos.x, -cursor.world_grid_pos.z, 0.01),
         Quat::from_axis_angle(Vec3::X, -PI * 0.5),
         UVec2::splat(512),
         Vec2::splat(1.0),

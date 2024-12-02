@@ -20,9 +20,16 @@ pub fn create_rail_asset(
     }
 }
 
+#[derive(Bundle, Default)]
+pub struct RailBundle {
+    pub pbr: PbrBundle,
+    pub building: Building,
+}
+
 #[derive(Default)]
 pub struct SpawnRail {
     pub is_preview: bool,
+    pub transform: Transform,
 }
 
 impl Command for SpawnRail {
@@ -35,6 +42,7 @@ impl Command for SpawnRail {
                     pbr: PbrBundle {
                         mesh: assets.mesh.clone(),
                         material: assets.material.clone(),
+                        transform: self.transform,
                         ..default()
                     },
                     ..default()
@@ -49,8 +57,12 @@ impl Command for SpawnRail {
     }
 }
 
-#[derive(Bundle, Default)]
-pub struct RailBundle {
-    pub pbr: PbrBundle,
-    pub building: Building,
+pub fn on_place_rail(mut c: Commands, q: Query<(Entity, &Transform), Added<PlaceBuildingPreview>>) {
+    q.into_iter().for_each(|(e, t)| {
+        c.add(SpawnRail {
+            transform: t.clone(),
+            ..default()
+        });
+        c.entity(e).remove::<PlaceBuildingPreview>();
+    });
 }
