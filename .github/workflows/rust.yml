@@ -28,7 +28,7 @@ jobs: # here we are specifing all of the jobs
       - name: Install linux dependencies
         run: sudo apt-get update; sudo apt-get install g++ pkg-config libx11-dev libasound2-dev libudev-dev libxkbcommon-x11-0
       - name: Install wasm bindgen
-        run: cargo install -f wasm-bindgen-cli
+        run: cargo install wasm-bindgen-cli
 
       # Handle build
       - name: Build wasm
