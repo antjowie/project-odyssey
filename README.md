@@ -46,3 +46,11 @@ Client-server, but considering if we want:
 Maybe a mix between the 2? I feel fully deterministic could be more trouble then worth it...
 If network really ends up being a blocker, I could always do local simulation and resolve desyncs by reloading the game in clients :P
 https://www.youtube.com/watch?v=ueEmiDM94IE&t=2235s
+
+### Some nice resources
+* [Rust book](https://doc.rust-lang.org/book/)
+* [Bevy book](https://bevy-cheatbook.github.io/)
+* [Tainted Coders (bevy guide/ref)](https://taintedcoders.com/)
+  * [Awesome Bevy (repo of info)](https://github.com/nolantait/awesome-bevy)
+* [ECS Guide](https://github.com/bevyengine/bevy/blob/v0.14.0/examples/ecs/ecs_guide.rs)
+* [Bevy Examples](https://bevyengine.org/examples/)
