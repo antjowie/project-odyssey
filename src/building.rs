@@ -22,33 +22,30 @@ impl Plugin for BuildingPlugin {
 }
 
 #[derive(Resource, PartialEq)]
-pub struct BuildingPreviewMaterialValid(Handle<StandardMaterial>);
-
-#[derive(Resource, PartialEq)]
-pub struct BuildingPreviewMaterialInvalid(Handle<StandardMaterial>);
-
-#[derive(Resource, PartialEq)]
-pub struct BuildingHighlightMaterial(Handle<StandardMaterial>);
+pub struct BuildingPreviewMaterial {
+    valid: Handle<StandardMaterial>,
+    invalid: Handle<StandardMaterial>,
+    // preview: Handle<StandardMaterial>,
+}
 
 fn load_assets(
     mut c: Commands,
     meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    c.insert_resource(BuildingPreviewMaterialValid(materials.add(
-        StandardMaterial {
+    c.insert_resource(BuildingPreviewMaterial {
+        valid: materials.add(StandardMaterial {
             base_color: Color::srgba(0.2, 1.0, 0.2, 0.5),
             alpha_mode: AlphaMode::Blend,
             ..default()
-        },
-    )));
-    c.insert_resource(BuildingPreviewMaterialInvalid(materials.add(
-        StandardMaterial {
+        }),
+        invalid: materials.add(StandardMaterial {
             base_color: Color::srgba(1.0, 0.2, 0.2, 0.5),
             alpha_mode: AlphaMode::Blend,
             ..default()
-        },
-    )));
+        }),
+    });
+
     c.insert_resource(rail::create_rail_asset(meshes, materials));
 }
 
@@ -93,14 +90,13 @@ fn on_remove_build_preview_component(
 
 fn update_build_preview_material(
     mut q: Query<(&mut Handle<StandardMaterial>, &BuildingPreview)>,
-    valid: Res<BuildingPreviewMaterialValid>,
-    invalid: Res<BuildingPreviewMaterialInvalid>,
+    preview_material: Res<BuildingPreviewMaterial>,
 ) {
     q.iter_mut().for_each(|(mut handle, preview)| {
-        if preview.valid && *handle != valid.0 {
-            *handle = valid.0.clone();
-        } else if !preview.valid && *handle != invalid.0 {
-            *handle = invalid.0.clone();
+        if preview.valid && *handle != preview_material.valid {
+            *handle = preview_material.valid.clone();
+        } else if !preview.valid && *handle != preview_material.invalid {
+            *handle = preview_material.invalid.clone();
         };
     });
 }

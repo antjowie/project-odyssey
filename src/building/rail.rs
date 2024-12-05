@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, render::extract_component::ExtractComponent};
 
 use crate::game::NetOwner;
 
@@ -18,6 +18,21 @@ pub fn create_rail_asset(
         mesh: meshes.add(Cuboid::from_length(2.0)),
         material: materials.add(Color::BLACK),
     }
+}
+
+/// Contains the details to build and connect a rail
+#[derive(Component)]
+pub struct RailPathState {
+    start_pos: Vec3,
+    start_joint: RailPathJoint,
+    end_pos: Vec3,
+    end_joint: RailPathJoint,
+}
+
+pub struct RailPathJoint {
+    left: Entity,
+    straight: Entity,
+    right: Entity,
 }
 
 #[derive(Bundle, Default)]
