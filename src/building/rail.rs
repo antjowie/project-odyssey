@@ -1,6 +1,6 @@
 use bevy::{prelude::*, render::extract_component::ExtractComponent};
 
-use crate::game::NetOwner;
+use crate::game::{NetOwner, PlayerCursor};
 
 use super::*;
 
@@ -21,18 +21,18 @@ pub fn create_rail_asset(
 }
 
 /// Contains the details to build and connect a rail
-#[derive(Component)]
+#[derive(Component, Default)]
 pub struct RailPathState {
-    start_pos: Vec3,
     start_joint: RailPathJoint,
-    end_pos: Vec3,
     end_joint: RailPathJoint,
 }
 
+#[derive(Default)]
 pub struct RailPathJoint {
-    left: Entity,
-    straight: Entity,
-    right: Entity,
+    pos: Vec3,
+    left: Option<Entity>,
+    straight: Option<Entity>,
+    right: Option<Entity>,
 }
 
 #[derive(Bundle, Default)]
@@ -72,7 +72,18 @@ impl Command for SpawnRail {
     }
 }
 
-pub fn on_place_rail(mut c: Commands, q: Query<(Entity, &Transform), Added<PlaceBuildingPreview>>) {
+enum RailPathPlacementType {
+    PlaceStart,
+    PlaceEnd,
+    Expand(RailPathJoint),
+}
+
+pub fn on_place_rail(
+    mut c: Commands,
+    q: Query<(Entity, &Transform), Added<PlaceBuildingPreview>>,
+    cursor: Query<PlayerCursor, With<NetOwner>>,
+    has_placed_start: Local<bool>,
+) {
     q.into_iter().for_each(|(e, t)| {
         c.add(SpawnRail {
             transform: t.clone(),

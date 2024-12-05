@@ -25,7 +25,7 @@ impl Plugin for GamePlugin {
         app.add_systems(
             Update,
             (
-                snap_building_preview_to_cursor,
+                snap_building_preview_to_build_pos,
                 validate_building_preview.run_if(on_timer(Duration::from_secs(1))),
                 draw_build_grid,
             )
@@ -67,6 +67,9 @@ pub struct PlayerStateEvent {
 #[derive(Component, Default)]
 pub struct PlayerCursor {
     pub screen_pos: Option<Vec2>,
+    pub should_snap_to_grid: bool,
+    // Can be world or grid pos based on user desire
+    pub build_pos: Vec3,
     pub world_pos: Vec3,
     pub world_grid_pos: Vec3,
 }
@@ -74,13 +77,13 @@ pub struct PlayerCursor {
 fn update_cursor(
     windows: Query<&Window, With<PrimaryWindow>>,
     cameras: Query<(&PanOrbitCameraState, &Camera, &GlobalTransform)>,
-    mut q: Query<&mut PlayerCursor, With<NetOwner>>,
+    mut q: Query<(&mut PlayerCursor, &ActionState<PlayerInput>), With<NetOwner>>,
 ) {
     let window = windows.single();
     let (pan_cam_state, camera, global_transform) =
         cameras.iter().find(|(_, c, _)| c.is_active).unwrap();
 
-    q.iter_mut().for_each(|mut cursor| {
+    q.iter_mut().for_each(|(mut cursor, input)| {
         // Check if cursor is in window
         cursor.screen_pos = window.cursor_position();
         if let Some(ray) = cursor
@@ -97,6 +100,16 @@ fn update_cursor(
             cursor.world_pos = pan_cam_state.center;
         }
         cursor.world_grid_pos = cursor.world_pos.round();
+
+        if input.just_pressed(&PlayerInput::SnapToGrid) {
+            cursor.should_snap_to_grid = !cursor.should_snap_to_grid;
+        }
+
+        cursor.build_pos = if cursor.should_snap_to_grid {
+            cursor.world_grid_pos
+        } else {
+            cursor.world_pos
+        };
     })
 }
 
@@ -105,6 +118,7 @@ pub enum PlayerInput {
     Interact,
     Cancel,
     Pause,
+    SnapToGrid,
 }
 
 impl PlayerInput {
@@ -114,6 +128,7 @@ impl PlayerInput {
             .with(PlayerInput::Cancel, KeyCode::KeyE)
             .with(PlayerInput::Cancel, KeyCode::Escape)
             .with(PlayerInput::Pause, KeyCode::Escape)
+            .with(PlayerInput::SnapToGrid, KeyCode::ShiftLeft)
     }
 }
 
@@ -175,14 +190,14 @@ fn create_building_preview(
     }
 }
 
-fn snap_building_preview_to_cursor(
+fn snap_building_preview_to_build_pos(
     mut q: Query<&mut Transform, (With<NetOwner>, With<BuildingPreview>)>,
     cursor: Query<&PlayerCursor, With<NetOwner>>,
 ) {
     let cursor = cursor.single();
 
     q.iter_mut().for_each(|mut transform| {
-        transform.translation = cursor.world_grid_pos;
+        transform.translation = cursor.build_pos;
     });
 }
 
