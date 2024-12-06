@@ -4,7 +4,6 @@ mod building;
 mod camera;
 mod debug;
 mod game;
-mod rail_graph;
 mod world;
 
 pub struct AppPlugin;
@@ -26,7 +25,6 @@ impl Plugin for AppPlugin {
             camera::CameraPlugin,
             debug::DebugPlugin,
             game::GamePlugin,
-            rail_graph::RailGraphPlugin,
             world::WorldPlugin,
         ));
     }

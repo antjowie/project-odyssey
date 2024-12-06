@@ -1,14 +1,16 @@
-use std::default;
-
+/// Logic for creating graphs from rails. We have multiple graph types that we
+/// generate such as:
+/// * a graph for pathfinding, we need nodes per intersection
+/// * a graph for traffic control, so we can store data on edges to see if they
+/// are occupied.
+///
+/// We store this as seperate graphs, as construction can be done on worked
+/// threads and we want to optimize the graphs for algorithm
 use bevy::prelude::*;
 use petgraph::prelude::*;
 
-/// A graph for the rail system
-
-pub struct RailGraphPlugin;
-
-impl Plugin for RailGraphPlugin {
-    fn build(&self, app: &mut App) {
+pub fn rail_graph_plugin(app: &mut App) {
+    {
         app.add_systems(Startup, test_rail_graph);
         app.add_systems(Update, debug_rail_graph);
     }

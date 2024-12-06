@@ -1,8 +1,7 @@
 use std::f32::consts::PI;
-use std::time::Duration;
 
-use bevy::time::common_conditions::on_timer;
 use bevy::{prelude::*, window::PrimaryWindow};
+use leafwing_input_manager::plugin::InputManagerSystem;
 use leafwing_input_manager::prelude::*;
 
 use crate::building::*;
@@ -16,7 +15,7 @@ impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(InputManagerPlugin::<PlayerInput>::default());
         app.add_event::<PlayerStateEvent>();
-        app.add_systems(PreUpdate, update_cursor);
+        app.add_systems(PreUpdate, update_cursor.after(InputManagerSystem::Update));
         app.add_systems(Update, process_state_change);
         // app.add_systems(Update, (process_state_change, create_building_preview));
         // app.add_systems(
@@ -32,6 +31,7 @@ impl Plugin for GamePlugin {
             )
                 .run_if(in_player_state(PlayerState::Building)),
         );
+        app.register_type::<PlayerCursor>();
     }
 }
 
@@ -65,7 +65,7 @@ pub struct PlayerStateEvent {
 }
 
 /// Component that tracks the cursor position
-#[derive(Component, Default)]
+#[derive(Component, Default, Reflect)]
 pub struct PlayerCursor {
     pub screen_pos: Option<Vec2>,
     pub should_snap_to_grid: bool,
@@ -84,34 +84,33 @@ fn update_cursor(
     let (pan_cam_state, camera, global_transform) =
         cameras.iter().find(|(_, c, _)| c.is_active).unwrap();
 
-    q.iter_mut().for_each(|(mut cursor, input)| {
-        // Check if cursor is in window
-        cursor.screen_pos = window.cursor_position();
-        if let Some(ray) = cursor
-            .screen_pos
-            .and_then(|cursor| camera.viewport_to_world(global_transform, cursor))
-        {
-            // Check if cursor intersects ground
-            if let Some(len) = ray.intersect_plane(Vec3::ZERO, InfinitePlane3d::new(Vec3::Y)) {
-                cursor.world_pos = ray.origin + ray.direction * len;
-                // gizmos.sphere(cursor.position, Quat::IDENTITY, 10.0, RED);
-            }
-        } else {
-            // Set these values to camera center, in case we do gamepad implementation
-            cursor.world_pos = pan_cam_state.center;
+    let (mut cursor, input) = q.single_mut();
+    // Check if cursor is in window
+    cursor.screen_pos = window.cursor_position();
+    if let Some(ray) = cursor
+        .screen_pos
+        .and_then(|cursor| camera.viewport_to_world(global_transform, cursor))
+    {
+        // Check if cursor intersects ground
+        if let Some(len) = ray.intersect_plane(Vec3::ZERO, InfinitePlane3d::new(Vec3::Y)) {
+            cursor.world_pos = ray.origin + ray.direction * len;
+            // gizmos.sphere(cursor.position, Quat::IDENTITY, 10.0, RED);
         }
-        cursor.world_grid_pos = cursor.world_pos.round();
+    } else {
+        // Set these values to camera center, in case we do gamepad implementation
+        cursor.world_pos = pan_cam_state.center;
+    }
+    cursor.world_grid_pos = cursor.world_pos.round();
 
-        if input.just_pressed(&PlayerInput::SnapToGrid) {
-            cursor.should_snap_to_grid = !cursor.should_snap_to_grid;
-        }
+    if input.just_pressed(&PlayerInput::SnapToGrid) {
+        cursor.should_snap_to_grid = !cursor.should_snap_to_grid;
+    }
 
-        cursor.build_pos = if cursor.should_snap_to_grid {
-            cursor.world_grid_pos
-        } else {
-            cursor.world_pos
-        };
-    })
+    cursor.build_pos = if cursor.should_snap_to_grid {
+        cursor.world_grid_pos
+    } else {
+        cursor.world_pos
+    };
 }
 
 #[derive(Actionlike, PartialEq, Eq, Hash, Clone, Copy, Debug, Reflect)]

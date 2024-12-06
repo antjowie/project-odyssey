@@ -8,6 +8,7 @@ pub struct BuildingPlugin;
 impl Plugin for BuildingPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, load_assets);
+        app.add_plugins(rail_plugin);
         // app.add_systems(
         //     Update,
         //     (
@@ -16,7 +17,6 @@ impl Plugin for BuildingPlugin {
         //     )
         //         .chain(),
         // );
-        add_rail_systems(app);
         // app.add_systems(PostUpdate, on_remove_build_preview_component);
     }
 }
