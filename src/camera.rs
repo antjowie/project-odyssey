@@ -1,5 +1,6 @@
 use crate::game::*;
 use bevy::{
+    math::vec3,
     prelude::*,
     window::{CursorGrabMode, PrimaryWindow},
 };
@@ -29,6 +30,8 @@ pub enum CameraAction {
     Translate,
     #[actionlike(DualAxis)]
     Pan,
+    #[actionlike(DualAxis)]
+    Orbit,
     #[actionlike(Axis)]
     Zoom,
 }
@@ -42,6 +45,10 @@ impl CameraAction {
             )
             .with_dual_axis(
                 CameraAction::Pan,
+                DualAxislikeChord::new(MouseButton::Middle, MouseMove::default().inverted()),
+            )
+            .with_dual_axis(
+                CameraAction::Orbit,
                 DualAxislikeChord::new(MouseButton::Right, MouseMove::default().inverted()),
             )
             // We use Digital to avoid inconsistencies between platform
@@ -167,7 +174,7 @@ fn update_pan_orbit_camera(
     q.iter_mut()
         .for_each(|(input, settings, mut t, mut state)| {
             // Calculate rotation
-            let direction = input.axis_pair(&CameraAction::Pan) * settings.orbit_sensitivity;
+            let direction = input.axis_pair(&CameraAction::Orbit) * settings.orbit_sensitivity;
             state.yaw += direction.x;
             state.pitch += direction.y;
             state.pitch = state
@@ -205,8 +212,8 @@ fn update_pan_orbit_camera(
 
             // Calculate translation
             let direction = input.axis_pair(&CameraAction::Translate);
-            let direction = Quat::from_axis_angle(Vec3::Y, state.yaw)
-                * Vec3::new(direction.x, 0.0, direction.y);
+            let forward = Quat::from_axis_angle(Vec3::Y, state.yaw);
+            let direction = forward * vec3(direction.x, 0.0, direction.y);
             let desired_velocity = direction.normalize_or_zero()
                 * settings
                     .max_speed_zoomed
@@ -217,8 +224,10 @@ fn update_pan_orbit_camera(
                 settings.acceleration * time.delta_seconds(),
             );
 
+            let pan = input.axis_pair(&CameraAction::Pan);
+            let pan = forward * vec3(pan.x, 0.0, pan.y) * state.zoom;
             state.center =
-                state.center + state.velocity * time.delta_seconds() + center_zoom_offset;
+                state.center + state.velocity * time.delta_seconds() + center_zoom_offset + pan;
 
             // Apply state to transform
             let offset = rotation * Vec3::Z * state.radius;
