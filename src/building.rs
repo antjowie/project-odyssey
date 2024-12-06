@@ -1,4 +1,4 @@
-use bevy::{ecs::world::Command, pbr::NotShadowCaster, prelude::*};
+use bevy::{pbr::NotShadowCaster, prelude::*};
 
 mod rail;
 pub use rail::*;
@@ -8,16 +8,16 @@ pub struct BuildingPlugin;
 impl Plugin for BuildingPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, load_assets);
-        app.add_systems(
-            Update,
-            (
-                on_add_build_preview_component,
-                update_build_preview_material,
-            )
-                .chain(),
-        );
-        app.add_systems(Update, rail::on_place_rail);
-        app.add_systems(PostUpdate, on_remove_build_preview_component);
+        // app.add_systems(
+        //     Update,
+        //     (
+        //         on_add_build_preview_component,
+        //         update_build_preview_material,
+        //     )
+        //         .chain(),
+        // );
+        add_rail_systems(app);
+        // app.add_systems(PostUpdate, on_remove_build_preview_component);
     }
 }
 
@@ -46,7 +46,7 @@ fn load_assets(
         }),
     });
 
-    c.insert_resource(rail::create_rail_asset(meshes, materials));
+    c.insert_resource(create_rail_asset(meshes, materials));
 }
 
 #[derive(Component, Default)]
@@ -56,11 +56,8 @@ pub struct Building;
 pub struct BuildingPreview {
     orig_material: Handle<StandardMaterial>,
     pub valid: bool,
+    pub wants_to_place: bool,
 }
-
-// Put on an entity when the user wants to place it
-#[derive(Component)]
-pub struct PlaceBuildingPreview;
 
 fn on_add_build_preview_component(
     mut c: Commands,

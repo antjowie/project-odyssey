@@ -17,7 +17,8 @@ impl Plugin for GamePlugin {
         app.add_plugins(InputManagerPlugin::<PlayerInput>::default());
         app.add_event::<PlayerStateEvent>();
         app.add_systems(PreUpdate, update_cursor);
-        app.add_systems(Update, (process_state_change, create_building_preview));
+        app.add_systems(Update, process_state_change);
+        // app.add_systems(Update, (process_state_change, create_building_preview));
         // app.add_systems(
         //     Update,
         //     process_view_state_input.run_if(in_player_state(PlayerState::Viewing)),
@@ -25,8 +26,8 @@ impl Plugin for GamePlugin {
         app.add_systems(
             Update,
             (
-                snap_building_preview_to_build_pos,
-                validate_building_preview.run_if(on_timer(Duration::from_secs(1))),
+                // snap_building_preview_to_build_pos,
+                // validate_building_preview.run_if(on_timer(Duration::from_secs(1))),
                 draw_build_grid,
             )
                 .run_if(in_player_state(PlayerState::Building)),
@@ -59,8 +60,8 @@ pub fn in_player_state(
 
 #[derive(Event)]
 pub struct PlayerStateEvent {
-    new_state: PlayerState,
-    old_state: PlayerState,
+    pub new_state: PlayerState,
+    pub old_state: PlayerState,
 }
 
 /// Component that tracks the cursor position
@@ -133,9 +134,8 @@ impl PlayerInput {
 }
 
 fn process_state_change(
-    mut c: Commands,
     mut q: Query<(&mut PlayerState, &ActionState<PlayerInput>), With<NetOwner>>,
-    preview: Query<Entity, (With<NetOwner>, With<BuildingPreview>)>,
+    mut previews: Query<&mut BuildingPreview, With<NetOwner>>,
     mut ev_player_state: EventWriter<PlayerStateEvent>,
     mut exit: EventWriter<AppExit>,
 ) {
@@ -153,11 +153,12 @@ fn process_state_change(
             }
         }
         PlayerState::Building => {
-            if input.just_pressed(&PlayerInput::Interact) {
-                preview.into_iter().for_each(|e| {
-                    c.entity(e).insert(PlaceBuildingPreview);
-                });
-            } else if input.just_pressed(&PlayerInput::Cancel) {
+            let wants_to_place = input.just_pressed(&PlayerInput::Interact);
+            previews.iter_mut().for_each(|mut preview| {
+                preview.wants_to_place = wants_to_place;
+            });
+
+            if input.just_pressed(&PlayerInput::Cancel) {
                 *state = PlayerState::Viewing;
             }
         }
@@ -178,10 +179,10 @@ fn create_building_preview(
 ) {
     for e in event.read() {
         if e.new_state == PlayerState::Building && e.old_state == PlayerState::Viewing {
-            c.add(SpawnRail {
-                is_preview: true,
-                ..default()
-            });
+            // c.add(SpawnRail {
+            //     is_preview: true,
+            //     ..default()
+            // });
         } else if e.new_state == PlayerState::Viewing && e.old_state == PlayerState::Building {
             q.into_iter().for_each(|e| {
                 c.entity(e).despawn();
