@@ -1,5 +1,3 @@
-use bevy::gizmos;
-
 /// Logic responsible for generating a preview of what RailBuilding will be built
 use super::*;
 
@@ -24,7 +22,7 @@ pub fn rail_planner_plugin(app: &mut App) {
 pub struct RailPlanner {
     pub start: Vec3,
     pub end: Vec3,
-    pub target_joint: Option<RailEntityJointPair>,
+    pub target_joint: Option<RailPathJointRef>,
 }
 
 impl RailPlanner {
@@ -35,12 +33,6 @@ impl RailPlanner {
             target_joint: None,
         }
     }
-}
-
-// We store target_joint info in a specific struct since we can't reference other RailPathJoint
-pub struct RailEntityJointPair {
-    rail_entity: Entity,
-    is_start_joint: bool,
 }
 
 fn create_rail_planner(
@@ -67,14 +59,19 @@ fn create_rail_planner(
 
         plan.target_joint = rail_states.into_iter().find_map(|(e, state)| {
             get_joint_collision(state, cursor_sphere).and_then(|joint| {
-                Some(RailEntityJointPair {
+                plan.start = joint.pos;
+                Some(RailPathJointRef {
                     rail_entity: e,
-                    is_start_joint: state.start_joint.pos == joint.pos,
+                    joint_idx: if state.joints[RAIL_START_JOINT].pos == joint.pos {
+                        RAIL_START_JOINT
+                    } else {
+                        RAIL_END_JOINT
+                    },
                 })
             })
         });
 
-        c.spawn((RailPlanner::new(cursor.build_pos), NetOwner));
+        c.spawn((plan, NetOwner));
     }
 }
 
@@ -107,6 +104,7 @@ fn preview_initial_rail_planner_placement(
 fn update_rail_planner(
     mut c: Commands,
     mut q: Query<&mut RailPlanner>,
+    mut states: Query<&mut RailPathState>,
     player_state: Query<(&PlayerCursor, &ActionState<PlayerInput>), With<NetOwner>>,
 ) {
     let (cursor, input) = player_state.single();
@@ -116,8 +114,14 @@ fn update_rail_planner(
 
         // Update state
         if input.just_pressed(&PlayerInput::Interact) {
-            c.spawn(RailBundle::new(RailPathState::new(&plan)));
+            let mut rail = c.spawn(RailBundle::default());
+            let rail_id = rail.id();
+            rail.insert(RailPathState::new(rail_id, &mut states, &plan));
             plan.start = plan.end;
+            plan.target_joint = Some(RailPathJointRef {
+                rail_entity: rail_id,
+                joint_idx: RAIL_END_JOINT,
+            });
         }
     });
 }
