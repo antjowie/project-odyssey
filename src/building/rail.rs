@@ -68,25 +68,25 @@ impl RailPathState {
         let dir = (end - start).normalize();
         let size = ((end - start).length()).min(2.5);
 
-        let mut state = RailPathState {
+        let mut self_state = RailPathState {
             joints: [
                 RailPathJoint {
                     pos: start,
-                    collision: Aabb3d::new(start + dir * size * 0.5, Vec3::splat(size)),
+                    collision: Aabb3d::new(start + dir * size, Vec3::splat(size)),
                     curves: [None; 3],
                 },
                 RailPathJoint {
                     pos: end,
-                    collision: Aabb3d::new(end - dir * size * 0.5, Vec3::splat(size)),
+                    collision: Aabb3d::new(end - dir * size, Vec3::splat(size)),
                     curves: [None; 3],
                 },
             ],
         };
 
-        if let Some(target_joint_ref) = plan.target_joint {
-            let mut target_state = q.get_mut(target_joint_ref.rail_entity).unwrap();
-            let self_joint_idx = if target_state.joints[target_joint_ref.joint_idx].pos
-                == state.joints[RAIL_START_JOINT].pos
+        let mut connect_joints = |other_joint_ref: RailPathJointRef| {
+            let mut other_state = q.get_mut(other_joint_ref.rail_entity).unwrap();
+            let self_joint_idx = if other_state.joints[other_joint_ref.joint_idx].pos
+                == self_state.joints[RAIL_START_JOINT].pos
             {
                 RAIL_START_JOINT
             } else {
@@ -99,14 +99,24 @@ impl RailPathState {
             };
 
             connect_rail_joints(
-                &mut state,
+                &mut self_state,
                 self_joint_ref,
-                &mut target_state,
-                target_joint_ref,
+                &mut other_state,
+                other_joint_ref,
             );
+        };
+
+        // Check if we expanded from a joint
+        if let Some(start_joint_ref) = plan.start_joint {
+            connect_joints(start_joint_ref);
         }
 
-        state
+        // Check if we clicked on a joint for end pos
+        if let Some(end_joint_ref) = plan.end_joint {
+            connect_joints(end_joint_ref);
+        }
+
+        self_state
     }
 }
 

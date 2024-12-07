@@ -22,7 +22,10 @@ pub fn rail_planner_plugin(app: &mut App) {
 pub struct RailPlanner {
     pub start: Vec3,
     pub end: Vec3,
-    pub target_joint: Option<RailPathJointRef>,
+    // Joint we expand from
+    pub start_joint: Option<RailPathJointRef>,
+    // Joint we end with, and want to connect to
+    pub end_joint: Option<RailPathJointRef>,
 }
 
 impl RailPlanner {
@@ -30,7 +33,8 @@ impl RailPlanner {
         RailPlanner {
             start: start_pos,
             end: start_pos,
-            target_joint: None,
+            start_joint: None,
+            end_joint: None,
         }
     }
 }
@@ -57,7 +61,7 @@ fn create_rail_planner(
 
         let mut plan = RailPlanner::new(cursor.build_pos);
 
-        plan.target_joint = rail_states.into_iter().find_map(|(e, state)| {
+        plan.start_joint = rail_states.into_iter().find_map(|(e, state)| {
             get_joint_collision(state, cursor_sphere).and_then(|joint| {
                 plan.start = joint.pos;
                 Some(RailPathJointRef {
@@ -104,21 +108,40 @@ fn preview_initial_rail_planner_placement(
 fn update_rail_planner(
     mut c: Commands,
     mut q: Query<&mut RailPlanner>,
-    mut states: Query<&mut RailPathState>,
+    mut rail_states: Query<(Entity, &mut RailPathState)>,
     player_state: Query<(&PlayerCursor, &ActionState<PlayerInput>), With<NetOwner>>,
 ) {
     let (cursor, input) = player_state.single();
+    let cursor_sphere = BoundingSphere::new(cursor.build_pos, 0.1);
 
     q.iter_mut().for_each(|mut plan| {
         plan.end = cursor.build_pos;
+        // Check if we connected with an joint for our end
+        plan.end_joint = rail_states.into_iter().find_map(|(e, state)| {
+            get_joint_collision(state, cursor_sphere).and_then(|joint| {
+                plan.end = joint.pos;
+                Some(RailPathJointRef {
+                    rail_entity: e,
+                    joint_idx: if state.joints[RAIL_START_JOINT].pos == joint.pos {
+                        RAIL_START_JOINT
+                    } else {
+                        RAIL_END_JOINT
+                    },
+                })
+            })
+        });
 
         // Update state
         if input.just_pressed(&PlayerInput::Interact) {
             let mut rail = c.spawn(RailBundle::default());
             let rail_id = rail.id();
-            rail.insert(RailPathState::new(rail_id, &mut states, &plan));
+            rail.insert(RailPathState::new(
+                rail_id,
+                &mut rail_states.transmute_lens::<&mut RailPathState>().query(),
+                &plan,
+            ));
             plan.start = plan.end;
-            plan.target_joint = Some(RailPathJointRef {
+            plan.start_joint = Some(RailPathJointRef {
                 rail_entity: rail_id,
                 joint_idx: RAIL_END_JOINT,
             });
