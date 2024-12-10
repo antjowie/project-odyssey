@@ -40,8 +40,8 @@ Build - Left mouse
 View mode - Esc/E
 Rotate - R
 Counter Rotate - Shift + R
-Snap Rotate - Alt + R
-Counter Snap Rotate - Alt + Shift + R
+Snap Rotate - Ctrl + R
+Counter Snap Rotate - Ctrl + Shift + R
 Cycle path rotate mode (straight/manual) - Tab
 Toggle snap to grid - Ctrl",
         ),

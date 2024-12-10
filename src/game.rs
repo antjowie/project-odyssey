@@ -1,4 +1,4 @@
-use std::f32::consts::{FRAC_2_PI, PI};
+use std::f32::consts::PI;
 
 use bevy::color::palettes::tailwind::*;
 use bevy::picking::pointer::PointerInteraction;
@@ -283,7 +283,7 @@ fn draw_build_grid(mut gizmos: Gizmos, q: Query<&PlayerCursor, With<NetOwner>>) 
             rotation: Quat::from_axis_angle(Vec3::X, -PI * 0.5),
             translation: vec3(cursor.world_grid_pos.x, 0.01, cursor.world_grid_pos.z).into(),
         },
-        UVec2::splat(512),
+        UVec2::splat(16),
         Vec2::splat(1.0),
         Color::srgba(0.8, 0.8, 0.8, 0.3),
     );
