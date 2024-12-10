@@ -21,7 +21,9 @@ pub fn rail_planner_plugin(app: &mut App) {
 #[derive(Component)]
 pub struct RailPlanner {
     pub start: Vec3,
+    pub start_forward: Vec3,
     pub end: Vec3,
+    pub end_forward: Vec3,
     // Joint we expand from
     pub start_joint: Option<RailPathJointRef>,
     // Joint we end with, and want to connect to
@@ -32,7 +34,9 @@ impl RailPlanner {
     fn new(start_pos: Vec3) -> Self {
         RailPlanner {
             start: start_pos,
+            start_forward: start_pos.normalize_or(Vec3::X),
             end: start_pos,
+            end_forward: start_pos.normalize_or(Vec3::X),
             start_joint: None,
             end_joint: None,
         }
@@ -43,7 +47,7 @@ fn create_rail_planner(
     mut c: Commands,
     q: Query<Entity, (With<RailPlanner>, With<NetOwner>)>,
     player_state: Query<(&PlayerCursor, &ActionState<PlayerInput>), With<NetOwner>>,
-    rail_states: Query<(Entity, &RailPathState)>,
+    rail_states: Query<(Entity, &Rail)>,
     mut event: EventReader<PlayerStateEvent>,
 ) {
     // Hacky, but we want to ignore placing this on the switch to view mode
@@ -64,6 +68,7 @@ fn create_rail_planner(
         plan.start_joint = rail_states.into_iter().find_map(|(e, state)| {
             get_joint_collision(state, cursor_sphere).and_then(|joint| {
                 plan.start = joint.pos;
+                plan.start_forward = -joint.forward;
                 Some(RailPathJointRef {
                     rail_entity: e,
                     joint_idx: if state.joints[RAIL_START_JOINT].pos == joint.pos {
@@ -108,7 +113,7 @@ fn preview_initial_rail_planner_placement(
 fn update_rail_planner(
     mut c: Commands,
     mut q: Query<&mut RailPlanner>,
-    mut rail_states: Query<(Entity, &mut RailPathState)>,
+    mut rail_states: Query<(Entity, &mut Rail)>,
     player_state: Query<(&PlayerCursor, &ActionState<PlayerInput>), With<NetOwner>>,
 ) {
     let (cursor, input) = player_state.single();
@@ -116,10 +121,32 @@ fn update_rail_planner(
 
     q.iter_mut().for_each(|mut plan| {
         plan.end = cursor.build_pos;
+        // Min length check
+        if plan.end.distance_squared(plan.start) < 1.0 {
+            plan.end = (plan.end - plan.start).normalize() + plan.start;
+        }
+
+        let towards = (plan.end - plan.start).normalize();
+        match cursor.rotation_mode {
+            PathRotationMode::Straight => {
+                if plan.start_joint.is_none() {
+                    plan.start_forward = -towards;
+                    plan.end_forward = towards;
+                } else {
+                    // plan.end_forward = plan.start_forward.reflect(towards.any_orthonormal_vector());
+                    plan.end_forward = -plan.start_forward;
+                }
+            }
+            PathRotationMode::Manual => {
+                plan.end_forward = Quat::from_rotation_y(cursor.manual_rotation) * Vec3::X;
+            }
+        }
+
         // Check if we connected with an joint for our end
         plan.end_joint = rail_states.into_iter().find_map(|(e, state)| {
             get_joint_collision(state, cursor_sphere).and_then(|joint| {
                 plan.end = joint.pos;
+                plan.end_forward = -joint.forward;
                 Some(RailPathJointRef {
                     rail_entity: e,
                     joint_idx: if state.joints[RAIL_START_JOINT].pos == joint.pos {
@@ -132,16 +159,15 @@ fn update_rail_planner(
         });
 
         if input.just_pressed(&PlayerInput::Interact) {
-            let mut rail = c.spawn(RailBundle::default());
-            let rail_id = rail.id();
-            rail.insert(RailPathState::new(
-                rail_id,
-                &mut rail_states.transmute_lens::<&mut RailPathState>().query(),
+            let mut rail = c.spawn_empty();
+            rail.insert(Rail::new(
+                rail.id(),
+                &mut rail_states.transmute_lens::<&mut Rail>().query(),
                 &plan,
             ));
             plan.start = plan.end;
             plan.start_joint = Some(RailPathJointRef {
-                rail_entity: rail_id,
+                rail_entity: rail.id(),
                 joint_idx: RAIL_END_JOINT,
             });
         }
@@ -150,6 +176,39 @@ fn update_rail_planner(
 
 fn draw_rail_planner(mut gizmos: Gizmos, q: Query<&RailPlanner>) {
     q.into_iter().for_each(|plan| {
-        gizmos.line(plan.start, plan.end, Color::WHITE);
+        // Draw line
+        let towards = plan.end - plan.start;
+        // let seg_distance = plan.start.distance(plan.end) * 0.25;
+
+        let points = [[
+            plan.start,
+            plan.start + towards.project_onto(-plan.start_forward) * 0.5,
+            plan.end + (-towards).project_onto(-plan.end_forward) * 0.5,
+            plan.end,
+        ]];
+
+        gizmos.linestrip(points[0], Color::srgb(1.0, 0.1, 0.1));
+
+        let curve = CubicBezier::new(points).to_curve().unwrap();
+        const STEPS: usize = 10;
+        gizmos.linestrip(curve.iter_positions(STEPS), Color::WHITE);
+        // info!(
+        //     "points {:?}\n
+        //     pos {:?}",
+        //     points,
+        //     curve.iter_positions(STEPS).collect::<Vec<Vec3>>()
+        // );
+
+        gizmos.line(plan.start, plan.end, Color::srgb(0.7, 0.7, 0.7));
+        gizmos.line(
+            plan.start,
+            plan.start + plan.start_forward,
+            Color::srgb(0.7, 0.0, 0.0),
+        );
+        gizmos.line(
+            plan.end,
+            plan.end + plan.end_forward,
+            Color::srgb(0.0, 0.0, 0.7),
+        );
     });
 }

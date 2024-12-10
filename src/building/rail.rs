@@ -19,12 +19,6 @@ pub fn rail_plugin(app: &mut App) {
     app.add_systems(Update, debug_draw_rail_path);
 }
 
-#[derive(Bundle, Default)]
-pub struct RailBundle {
-    pub pbr: PbrBundle,
-    pub building: Building,
-}
-
 #[derive(Resource)]
 pub struct RailAsset {
     mesh: Handle<Mesh>,
@@ -53,32 +47,30 @@ const RAIL_CURVES_MAX: usize = (RAIL_MAX_RADIANS / RAIL_MIN_RADIANS) as usize + 
 
 /// Contains the details to build and connect a rail
 #[derive(Component)]
-pub struct RailPathState {
+pub struct Rail {
     pub joints: [RailPathJoint; RAIL_JOINTS_MAX],
 }
 
-impl RailPathState {
-    fn new(
-        self_entity: Entity,
-        q: &mut Query<&mut RailPathState>,
-        plan: &RailPlanner,
-    ) -> RailPathState {
+impl Rail {
+    fn new(self_entity: Entity, q: &mut Query<&mut Rail>, plan: &RailPlanner) -> Rail {
         let start = plan.start;
         let end = plan.end;
         let dir = (end - start).normalize();
         let size = ((end - start).length()).min(2.5);
 
-        let mut self_state = RailPathState {
+        let mut self_state = Rail {
             joints: [
                 RailPathJoint {
                     pos: start,
+                    forward: plan.start_forward,
                     collision: Aabb3d::new(start + dir * size, Vec3::splat(size)),
-                    curves: [None; 3],
+                    n_joints: [None; 3],
                 },
                 RailPathJoint {
                     pos: end,
+                    forward: plan.end_forward,
                     collision: Aabb3d::new(end - dir * size, Vec3::splat(size)),
-                    curves: [None; 3],
+                    n_joints: [None; 3],
                 },
             ],
         };
@@ -122,15 +114,19 @@ impl RailPathState {
 
 pub struct RailPathJoint {
     pub pos: Vec3,
+    // Vector that represents the direction this joint goes towards. Used when we extend from this joint
+    pub forward: Vec3,
+    // TODO: Probs wanna use an OBB or look into triggers with MeshPickingPlugin
     pub collision: Aabb3d,
-    pub curves: [Option<RailPathJointRef>; 3],
+    // Neighbor joints
+    pub n_joints: [Option<RailPathJointRef>; 3],
 }
 
 impl RailPathJoint {
     fn get_empty_curve_idx(&self) -> Option<usize> {
-        info!("{:?}", self.curves);
+        info!("{:?}", self.n_joints);
 
-        self.curves
+        self.n_joints
             .iter()
             .enumerate()
             .find(|(_, c)| c.is_none())
@@ -139,17 +135,17 @@ impl RailPathJoint {
 }
 
 fn connect_rail_joints(
-    left_state: &mut RailPathState,
+    left_state: &mut Rail,
     left_joint_ref: RailPathJointRef,
-    right_state: &mut RailPathState,
+    right_state: &mut Rail,
     right_joint_ref: RailPathJointRef,
 ) {
     // No spot left in the joint curves
     let left_joint = &mut left_state.joints[left_joint_ref.joint_idx];
-    left_joint.curves[left_joint.get_empty_curve_idx().unwrap()] = Some(right_joint_ref);
+    left_joint.n_joints[left_joint.get_empty_curve_idx().unwrap()] = Some(right_joint_ref);
 
     let right_joint = &mut right_state.joints[right_joint_ref.joint_idx];
-    right_joint.curves[right_joint.get_empty_curve_idx().unwrap()] = Some(left_joint_ref);
+    right_joint.n_joints[right_joint.get_empty_curve_idx().unwrap()] = Some(left_joint_ref);
 }
 
 // We store target_joint info in a specific struct since we can't reference other RailPathJoint
@@ -159,10 +155,7 @@ pub struct RailPathJointRef {
     pub joint_idx: usize,
 }
 
-fn get_joint_collision(
-    rail_path: &RailPathState,
-    sphere: BoundingSphere,
-) -> Option<&RailPathJoint> {
+fn get_joint_collision(rail_path: &Rail, sphere: BoundingSphere) -> Option<&RailPathJoint> {
     if rail_path.joints[RAIL_START_JOINT]
         .collision
         .intersects(&sphere)
@@ -180,21 +173,48 @@ fn get_joint_collision(
 
 pub fn debug_draw_rail_path(
     mut gizmos: Gizmos,
-    q: Query<&RailPathState>,
+    q: Query<&Rail>,
     cursor: Query<&PlayerCursor, With<NetOwner>>,
 ) {
     let cursor = cursor.single();
     let cursor_sphere = BoundingSphere::new(cursor.build_pos, 0.1);
 
     q.into_iter().for_each(|state| {
+        // Draw line
+        let seg_distance = state.joints[RAIL_START_JOINT]
+            .pos
+            .distance(state.joints[RAIL_END_JOINT].pos)
+            * 0.25;
+
+        let points = [[
+            state.joints[RAIL_START_JOINT].pos,
+            state.joints[RAIL_START_JOINT].pos
+                + (-state.joints[RAIL_START_JOINT].forward) * seg_distance,
+            state.joints[RAIL_END_JOINT].pos
+                + (-state.joints[RAIL_END_JOINT].forward) * seg_distance,
+            state.joints[RAIL_END_JOINT].pos,
+        ]];
+
+        let curve = CubicBezier::new(points).to_curve().unwrap();
+        const STEPS: usize = 10;
+        gizmos.linestrip(curve.iter_positions(STEPS), Color::WHITE);
+
+        // Draw forwards
         gizmos.line(
             state.joints[RAIL_START_JOINT].pos,
-            state.joints[RAIL_END_JOINT].pos,
-            Color::WHITE,
+            state.joints[RAIL_START_JOINT].pos + state.joints[RAIL_START_JOINT].forward,
+            Color::srgb(1.0, 0.1, 0.1),
         );
+        gizmos.line(
+            state.joints[RAIL_START_JOINT].pos,
+            state.joints[RAIL_START_JOINT].pos + state.joints[RAIL_START_JOINT].forward,
+            Color::srgb(0.1, 0.1, 1.0),
+        );
+
         let collision = get_joint_collision(state, cursor_sphere);
 
-        let mut draw_joints = |joint: &RailPathJoint| {
+        let mut draw_joint = |joint: &RailPathJoint| {
+            // Draw collision
             gizmos.cuboid(
                 Transform::from_translation(joint.collision.center().into())
                     .with_scale(joint.collision.half_size().into()),
@@ -204,17 +224,14 @@ pub fn debug_draw_rail_path(
                     Color::WHITE
                 },
             );
-        };
-        draw_joints(&state.joints[RAIL_START_JOINT]);
-        draw_joints(&state.joints[RAIL_END_JOINT]);
 
-        let mut draw_curves = |joint: &RailPathJoint| {
-            for curve in joint.curves {
-                if let Some(curve) = curve {
-                    let target_joint = q.get(curve.rail_entity).unwrap();
+            // Draw neighbors
+            for neighbor in joint.n_joints {
+                if let Some(neighbor) = neighbor {
+                    let target_joint = q.get(neighbor.rail_entity).unwrap();
                     gizmos.line(
                         joint.collision.center().into(),
-                        target_joint.joints[curve.joint_idx]
+                        target_joint.joints[neighbor.joint_idx]
                             .collision
                             .center()
                             .into(),
@@ -223,7 +240,7 @@ pub fn debug_draw_rail_path(
                 }
             }
         };
-        draw_curves(&state.joints[RAIL_START_JOINT]);
-        draw_curves(&state.joints[RAIL_END_JOINT]);
+        draw_joint(&state.joints[RAIL_START_JOINT]);
+        draw_joint(&state.joints[RAIL_END_JOINT]);
     });
 }

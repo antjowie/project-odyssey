@@ -1,4 +1,4 @@
-use std::f32::consts::PI;
+use std::f32::consts::{FRAC_2_PI, PI};
 
 use bevy::color::palettes::tailwind::*;
 use bevy::picking::pointer::PointerInteraction;
@@ -58,6 +58,15 @@ pub fn in_player_state(
     move |query: Query<&PlayerState, With<NetOwner>>| !query.is_empty() && *query.single() == state
 }
 
+#[derive(Default, Reflect, PartialEq)]
+pub enum PathRotationMode {
+    // Use manually defined rotation
+    Manual,
+    // Automatically rotate to an ideal position
+    #[default]
+    Straight,
+}
+
 #[derive(Event)]
 pub struct PlayerStateEvent {
     pub new_state: PlayerState,
@@ -69,6 +78,9 @@ pub struct PlayerStateEvent {
 pub struct PlayerCursor {
     pub screen_pos: Option<Vec2>,
     pub should_snap_to_grid: bool,
+    // Cached build rotation
+    pub manual_rotation: f32,
+    pub rotation_mode: PathRotationMode,
     // Can be world or grid pos based on user desire
     pub build_pos: Vec3,
     pub world_pos: Vec3,
@@ -76,10 +88,50 @@ pub struct PlayerCursor {
     pub world_grid_pos: Vec3,
 }
 
+#[derive(Actionlike, PartialEq, Eq, Hash, Clone, Copy, Debug, Reflect)]
+pub enum PlayerInput {
+    Interact,
+    Cancel,
+    Pause,
+    SnapToGrid,
+    Rotate,
+    CounterRotate,
+    SnapRotate,
+    SnapCounterRotate,
+    CyclePathRotateMode,
+}
+
+impl PlayerInput {
+    pub fn default_player_mapping() -> InputMap<PlayerInput> {
+        InputMap::default()
+            .with(PlayerInput::Interact, MouseButton::Left)
+            .with(PlayerInput::Cancel, KeyCode::KeyE)
+            .with(PlayerInput::Cancel, KeyCode::Escape)
+            .with(PlayerInput::Pause, KeyCode::Escape)
+            .with(PlayerInput::SnapToGrid, KeyCode::ControlLeft)
+            .with(PlayerInput::Rotate, KeyCode::KeyR)
+            .with(
+                PlayerInput::SnapRotate,
+                ButtonlikeChord::modified(ModifierKey::Control, KeyCode::KeyR),
+            )
+            .with(
+                PlayerInput::CounterRotate,
+                ButtonlikeChord::modified(ModifierKey::Shift, KeyCode::KeyR),
+            )
+            .with(
+                PlayerInput::SnapCounterRotate,
+                ButtonlikeChord::modified(ModifierKey::Shift, KeyCode::KeyR)
+                    .with(ModifierKey::Control),
+            )
+            .with(PlayerInput::CyclePathRotateMode, KeyCode::Tab)
+    }
+}
+
 fn update_cursor(
     windows: Query<&Window, With<PrimaryWindow>>,
     cameras: Query<(&PanOrbitCamera, &Camera, &GlobalTransform)>,
     mut q: Query<(&mut PlayerCursor, &ActionState<PlayerInput>), With<NetOwner>>,
+    time: Res<Time>,
 ) {
     let window = windows.single();
     let (pan_cam, camera, global_transform) = cameras.iter().find(|(_, c, _)| c.is_active).unwrap();
@@ -107,30 +159,34 @@ fn update_cursor(
         cursor.should_snap_to_grid = !cursor.should_snap_to_grid;
     }
 
+    if input.pressed(&PlayerInput::Rotate) {
+        cursor.manual_rotation -= PI * 0.5 * time.delta_secs();
+    }
+    if input.pressed(&PlayerInput::CounterRotate) {
+        cursor.manual_rotation += PI * 0.5 * time.delta_secs();
+    }
+
+    const SNAP_ROT: f32 = PI * 0.5;
+    if input.just_pressed(&PlayerInput::SnapRotate) {
+        cursor.manual_rotation = (cursor.manual_rotation / SNAP_ROT).round() * SNAP_ROT - SNAP_ROT;
+    }
+    if input.just_pressed(&PlayerInput::SnapCounterRotate) {
+        cursor.manual_rotation = (cursor.manual_rotation / SNAP_ROT).round() * SNAP_ROT + SNAP_ROT;
+    }
+
+    if input.just_pressed(&PlayerInput::CyclePathRotateMode) {
+        cursor.rotation_mode = if cursor.rotation_mode == PathRotationMode::Straight {
+            PathRotationMode::Manual
+        } else {
+            PathRotationMode::Straight
+        }
+    }
+
     cursor.build_pos = if cursor.should_snap_to_grid {
         cursor.world_grid_pos
     } else {
         cursor.world_pos
     };
-}
-
-#[derive(Actionlike, PartialEq, Eq, Hash, Clone, Copy, Debug, Reflect)]
-pub enum PlayerInput {
-    Interact,
-    Cancel,
-    Pause,
-    SnapToGrid,
-}
-
-impl PlayerInput {
-    pub fn default_player_mapping() -> InputMap<PlayerInput> {
-        InputMap::default()
-            .with(PlayerInput::Interact, MouseButton::Left)
-            .with(PlayerInput::Cancel, KeyCode::KeyE)
-            .with(PlayerInput::Cancel, KeyCode::Escape)
-            .with(PlayerInput::Pause, KeyCode::Escape)
-            .with(PlayerInput::SnapToGrid, KeyCode::ShiftLeft)
-    }
 }
 
 fn process_state_change(

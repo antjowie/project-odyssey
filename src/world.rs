@@ -25,6 +25,36 @@ fn setup_world(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    // --- Controls
+    c.spawn((
+        Text::new(
+            " 
+- Camera controls - 
+Translate/panning - WASD/Middle mouse
+Orbiting - Right mouse
+Zooming - Scroll
+
+- Build controls - 
+Build mode - Left mouse
+Build - Left mouse
+View mode - Esc/E
+Rotate - R
+Counter Rotate - Shift + R
+Snap Rotate - Alt + R
+Counter Snap Rotate - Alt + Shift + R
+Cycle path rotate mode (straight/manual) - Tab
+Toggle snap to grid - Ctrl",
+        ),
+        TextLayout::new_with_justify(JustifyText::Left),
+        Node {
+            position_type: PositionType::Absolute,
+            bottom: Val::Px(10.0),
+            left: Val::Px(10.0),
+
+            ..default()
+        },
+    ));
+
     // --- Gameplay
     // Player State
     c.spawn((
