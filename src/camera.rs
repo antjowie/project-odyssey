@@ -13,12 +13,10 @@ impl Plugin for CameraPlugin {
         app.add_systems(
             Update,
             // Grab Cursor will likely need a software cursor, cuz the harware impl seems to not have a lot of parity
-            // (update_pan_orbit_camera, grab_cursor)
-            //     .run_if(any_with_component::<PanOrbitCameraState>),
-            (update_pan_orbit_camera).run_if(any_with_component::<PanOrbitCameraState>),
+            (update_pan_orbit_camera).run_if(any_with_component::<PanOrbitCamera>),
         );
         app.add_plugins(InputManagerPlugin::<CameraAction>::default());
-        app.register_type::<PanOrbitCameraState>();
+        app.register_type::<PanOrbitCamera>();
         app.register_type::<PanOrbitCameraSettings>();
     }
 }
@@ -28,7 +26,6 @@ impl Plugin for CameraPlugin {
 pub enum CameraAction {
     #[actionlike(DualAxis)]
     Translate,
-    #[actionlike(DualAxis)]
     Pan,
     #[actionlike(DualAxis)]
     Orbit,
@@ -39,14 +36,8 @@ pub enum CameraAction {
 impl CameraAction {
     pub fn default_player_mapping() -> InputMap<CameraAction> {
         InputMap::default()
-            .with_dual_axis(
-                CameraAction::Translate,
-                KeyboardVirtualDPad::WASD.inverted_y(),
-            )
-            .with_dual_axis(
-                CameraAction::Pan,
-                DualAxislikeChord::new(MouseButton::Middle, MouseMove::default().inverted()),
-            )
+            .with_dual_axis(CameraAction::Translate, VirtualDPad::wasd().inverted_y())
+            .with(CameraAction::Pan, MouseButton::Middle)
             .with_dual_axis(
                 CameraAction::Orbit,
                 DualAxislikeChord::new(MouseButton::Right, MouseMove::default().inverted()),
@@ -57,16 +48,9 @@ impl CameraAction {
     }
 }
 
-#[derive(Bundle, Default)]
-pub struct PanOrbitCameraBundle {
-    pub camera: Camera3dBundle,
-    pub state: PanOrbitCameraState,
-    pub settings: PanOrbitCameraSettings,
-    pub input: InputManagerBundle<CameraAction>,
-}
-
 #[derive(Reflect, Component)]
-pub struct PanOrbitCameraState {
+#[require(Camera3d, PanOrbitCameraSettings)]
+pub struct PanOrbitCamera {
     pub center: Vec3,
     pub velocity: Vec3,
     pub radius: f32,
@@ -79,11 +63,17 @@ pub struct PanOrbitCameraState {
     pub yaw: f32,
 }
 
-impl Default for PanOrbitCameraState {
+#[derive(Bundle, Default)]
+pub struct PanOrbitCameraBundle {
+    pub camera: PanOrbitCamera,
+    pub input: InputManagerBundle<CameraAction>,
+}
+
+impl Default for PanOrbitCamera {
     fn default() -> Self {
         let default_settings = PanOrbitCameraSettings::default();
         const DEFAULT_ZOOM: f32 = 0.5;
-        PanOrbitCameraState {
+        PanOrbitCamera {
             center: Vec3::ZERO,
             velocity: Vec3::ZERO,
             zoom: DEFAULT_ZOOM,
@@ -129,47 +119,19 @@ fn calculate_desired_radius(zoom: f32, min_radius: f32, max_radius: f32) -> f32 
     min_radius.lerp(max_radius, zoom.powi(2))
 }
 
-#[derive(Default)]
-struct CursorPos(Option<Vec2>);
-
-fn grab_cursor(
-    mut windows: Query<&mut Window, With<PrimaryWindow>>,
-    buttons: Res<ButtonInput<MouseButton>>,
-    mut cursor_pos: Local<CursorPos>,
-) {
-    let mut window = windows.single_mut();
-    let is_grabbed = window.cursor.grab_mode == CursorGrabMode::Locked;
-    let should_grab = buttons.pressed(MouseButton::Right);
-
-    if is_grabbed != should_grab {
-        if should_grab {
-            cursor_pos.0 = window.cursor_position();
-            window.cursor.grab_mode = CursorGrabMode::Locked;
-            // window.cursor.visible = false;
-            info!("{:?}", cursor_pos.0);
-        } else {
-            info!("{:?}", cursor_pos.0);
-            window.cursor.grab_mode = CursorGrabMode::None;
-            // window.cursor.visible = true;
-            window.set_cursor_position(cursor_pos.0);
-            cursor_pos.0 = None;
-        }
-    }
-    window.set_cursor_position(cursor_pos.0);
-}
-
 fn update_pan_orbit_camera(
     // mut gizmos: Gizmos,
     mut q: Query<(
         &ActionState<CameraAction>,
         &PanOrbitCameraSettings,
         &mut Transform,
-        &mut PanOrbitCameraState,
+        &mut PanOrbitCamera,
     )>,
-    player_cursors: Query<&PlayerCursor>,
+    cursors: Query<&PlayerCursor>,
     time: Res<Time>,
+    mut last_pan_offset: Local<Vec3>,
 ) {
-    let player_cursor = player_cursors.single();
+    let player_cursor = cursors.single();
 
     q.iter_mut()
         .for_each(|(input, settings, mut t, mut state)| {
@@ -189,7 +151,7 @@ fn update_pan_orbit_camera(
             let desired_radius =
                 calculate_desired_radius(state.zoom, settings.min_radius, settings.max_radius);
             const RADIUS_LERP_RATE: f32 = 50.0;
-            let alpha = (time.delta_seconds() * RADIUS_LERP_RATE).min(1.0);
+            let alpha = (time.delta_secs() * RADIUS_LERP_RATE).min(1.0);
 
             let radius_delta = state.radius;
             state.radius = state.radius.lerp(desired_radius, alpha);
@@ -219,15 +181,26 @@ fn update_pan_orbit_camera(
                     .max_speed_zoomed
                     .lerp(settings.max_speed, state.zoom);
 
-            state.velocity = state.velocity.move_towards(
-                desired_velocity,
-                settings.acceleration * time.delta_seconds(),
-            );
+            state.velocity = state
+                .velocity
+                .move_towards(desired_velocity, settings.acceleration * time.delta_secs());
 
-            let pan = input.axis_pair(&CameraAction::Pan);
-            let pan = forward * vec3(pan.x, 0.0, pan.y) * state.zoom;
+            // Handle pan
+            let mut pan = Vec3::ZERO;
+            if input.pressed(&CameraAction::Pan) {
+                let offset = player_cursor.world_pos.xz() - player_cursor.prev_world_pos.xz();
+
+                pan.x = offset.x;
+                pan.z = offset.y;
+                // TODO: We have no software mouse yet so we can't lock the mouse (atleast, I didn't manage to lock the
+                // hardware mouse) so we counteract the mouse offset (if we move 1 to right cuz of pan, our mouse is
+                // also moved to right which would cause indefinite movement (like middle mouse button))
+                pan -= *last_pan_offset;
+                pan = -pan;
+                *last_pan_offset = pan;
+            }
             state.center =
-                state.center + state.velocity * time.delta_seconds() + center_zoom_offset + pan;
+                state.center + state.velocity * time.delta_secs() + center_zoom_offset + pan;
 
             // Apply state to transform
             let offset = rotation * Vec3::Z * state.radius;

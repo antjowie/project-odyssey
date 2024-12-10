@@ -54,7 +54,7 @@ pub struct Building;
 
 #[derive(Component, Default)]
 pub struct BuildingPreview {
-    orig_material: Handle<StandardMaterial>,
+    orig_material: MeshMaterial3d<StandardMaterial>,
     pub valid: bool,
     pub wants_to_place: bool,
 }
@@ -62,7 +62,11 @@ pub struct BuildingPreview {
 fn on_add_build_preview_component(
     mut c: Commands,
     mut q: Query<
-        (Entity, &Handle<StandardMaterial>, &mut BuildingPreview),
+        (
+            Entity,
+            &MeshMaterial3d<StandardMaterial>,
+            &mut BuildingPreview,
+        ),
         (With<Building>, Added<BuildingPreview>),
     >,
 ) {
@@ -74,7 +78,7 @@ fn on_add_build_preview_component(
 
 fn on_remove_build_preview_component(
     mut c: Commands,
-    mut q: Query<(&mut Handle<StandardMaterial>, &BuildingPreview), With<Building>>,
+    mut q: Query<(&mut MeshMaterial3d<StandardMaterial>, &BuildingPreview), With<Building>>,
     mut removed: RemovedComponents<BuildingPreview>,
 ) {
     for entity in removed.read() {
@@ -86,14 +90,14 @@ fn on_remove_build_preview_component(
 }
 
 fn update_build_preview_material(
-    mut q: Query<(&mut Handle<StandardMaterial>, &BuildingPreview)>,
+    mut q: Query<(&mut MeshMaterial3d<StandardMaterial>, &BuildingPreview)>,
     preview_material: Res<BuildingPreviewMaterial>,
 ) {
-    q.iter_mut().for_each(|(mut handle, preview)| {
-        if preview.valid && *handle != preview_material.valid {
-            *handle = preview_material.valid.clone();
-        } else if !preview.valid && *handle != preview_material.invalid {
-            *handle = preview_material.invalid.clone();
+    q.iter_mut().for_each(|(mut mat, preview)| {
+        if preview.valid && mat.0 != preview_material.valid {
+            mat.0 = preview_material.valid.clone();
+        } else if !preview.valid && mat.0 != preview_material.invalid {
+            mat.0 = preview_material.invalid.clone();
         };
     });
 }

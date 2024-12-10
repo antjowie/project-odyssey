@@ -21,6 +21,7 @@ impl Plugin for AppPlugin {
                     ..default()
                 },
             ),
+            MeshPickingPlugin,
             building::BuildingPlugin,
             camera::CameraPlugin,
             debug::DebugPlugin,

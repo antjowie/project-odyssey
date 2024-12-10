@@ -22,5 +22,5 @@ impl Plugin for DebugPlugin {
 }
 
 fn setup_debug(mut c: Commands) {
-    c.spawn(PerfUiCompleteBundle::default());
+    c.spawn(PerfUiAllEntries::default());
 }

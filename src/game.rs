@@ -1,6 +1,8 @@
 use std::f32::consts::PI;
 
-use bevy::{prelude::*, window::PrimaryWindow};
+use bevy::color::palettes::tailwind::*;
+use bevy::picking::pointer::PointerInteraction;
+use bevy::{math::*, prelude::*, window::PrimaryWindow};
 use leafwing_input_manager::plugin::InputManagerSystem;
 use leafwing_input_manager::prelude::*;
 
@@ -16,20 +18,18 @@ impl Plugin for GamePlugin {
         app.add_plugins(InputManagerPlugin::<PlayerInput>::default());
         app.add_event::<PlayerStateEvent>();
         app.add_systems(PreUpdate, update_cursor.after(InputManagerSystem::Update));
-        app.add_systems(Update, process_state_change);
-        // app.add_systems(Update, (process_state_change, create_building_preview));
-        // app.add_systems(
-        //     Update,
-        //     process_view_state_input.run_if(in_player_state(PlayerState::Viewing)),
-        // );
         app.add_systems(
             Update,
             (
+                process_state_change,
+                // draw_mesh_intersections,
+                draw_build_grid.run_if(in_player_state(PlayerState::Building)),
                 // snap_building_preview_to_build_pos,
                 // validate_building_preview.run_if(on_timer(Duration::from_secs(1))),
-                draw_build_grid,
-            )
-                .run_if(in_player_state(PlayerState::Building)),
+                // process_view_state_input.run_if(in_player_state(PlayerState::Viewing)),
+                // process_state_change,
+                // create_building_preview,
+            ),
         );
         app.register_type::<PlayerCursor>();
     }
@@ -72,24 +72,25 @@ pub struct PlayerCursor {
     // Can be world or grid pos based on user desire
     pub build_pos: Vec3,
     pub world_pos: Vec3,
+    pub prev_world_pos: Vec3,
     pub world_grid_pos: Vec3,
 }
 
 fn update_cursor(
     windows: Query<&Window, With<PrimaryWindow>>,
-    cameras: Query<(&PanOrbitCameraState, &Camera, &GlobalTransform)>,
+    cameras: Query<(&PanOrbitCamera, &Camera, &GlobalTransform)>,
     mut q: Query<(&mut PlayerCursor, &ActionState<PlayerInput>), With<NetOwner>>,
 ) {
     let window = windows.single();
-    let (pan_cam_state, camera, global_transform) =
-        cameras.iter().find(|(_, c, _)| c.is_active).unwrap();
-
+    let (pan_cam, camera, global_transform) = cameras.iter().find(|(_, c, _)| c.is_active).unwrap();
     let (mut cursor, input) = q.single_mut();
+
     // Check if cursor is in window
+    cursor.prev_world_pos = cursor.world_pos;
     cursor.screen_pos = window.cursor_position();
     if let Some(ray) = cursor
         .screen_pos
-        .and_then(|cursor| camera.viewport_to_world(global_transform, cursor))
+        .and_then(|pos| camera.viewport_to_world(global_transform, pos).ok())
     {
         // Check if cursor intersects ground
         if let Some(len) = ray.intersect_plane(Vec3::ZERO, InfinitePlane3d::new(Vec3::Y)) {
@@ -98,7 +99,7 @@ fn update_cursor(
         }
     } else {
         // Set these values to camera center, in case we do gamepad implementation
-        cursor.world_pos = pan_cam_state.center;
+        cursor.world_pos = pan_cam.center;
     }
     cursor.world_grid_pos = cursor.world_pos.round();
 
@@ -171,6 +172,17 @@ fn process_state_change(
     }
 }
 
+fn draw_mesh_intersections(pointers: Query<&PointerInteraction>, mut gizmos: Gizmos) {
+    for (point, normal) in pointers
+        .iter()
+        .filter_map(|interaction| interaction.get_nearest_hit())
+        .filter_map(|(_entity, hit)| hit.position.zip(hit.normal))
+    {
+        gizmos.sphere(point, 0.05, RED_500);
+        gizmos.arrow(point, point + normal.normalize() * 0.5, PINK_100);
+    }
+}
+
 fn create_building_preview(
     q: Query<Entity, (With<NetOwner>, With<BuildingPreview>)>,
     mut c: Commands,
@@ -211,8 +223,10 @@ fn draw_build_grid(mut gizmos: Gizmos, q: Query<&PlayerCursor, With<NetOwner>>) 
     let cursor = q.single();
 
     gizmos.grid(
-        Vec3::new(cursor.world_grid_pos.x, -cursor.world_grid_pos.z, 0.01),
-        Quat::from_axis_angle(Vec3::X, -PI * 0.5),
+        Isometry3d {
+            rotation: Quat::from_axis_angle(Vec3::X, -PI * 0.5),
+            translation: vec3(cursor.world_grid_pos.x, 0.01, cursor.world_grid_pos.z).into(),
+        },
         UVec2::splat(512),
         Vec2::splat(1.0),
         Color::srgba(0.8, 0.8, 0.8, 0.3),

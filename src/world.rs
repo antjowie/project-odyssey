@@ -2,6 +2,9 @@ use crate::camera::*;
 use crate::game::*;
 
 use bevy::pbr::DirectionalLightShadowMap;
+use bevy::pbr::FogVolume;
+use bevy::pbr::ScreenSpaceAmbientOcclusion;
+use bevy::pbr::VolumetricFog;
 use bevy::{
     pbr::{CascadeShadowConfigBuilder, NotShadowCaster},
     prelude::*,
@@ -39,7 +42,7 @@ fn setup_world(
             input: InputManagerBundle::with_map(CameraAction::default_player_mapping()),
             ..default()
         },
-        FogSettings {
+        DistanceFog {
             color: Color::srgba(0.35, 0.48, 0.66, 1.0),
             directional_light_color: Color::srgba(1.0, 0.95, 0.85, 0.5),
             directional_light_exponent: 30.0,
@@ -64,50 +67,44 @@ fn setup_world(
     }
     .build();
 
-    c.spawn(DirectionalLightBundle {
-        directional_light: DirectionalLight {
+    c.spawn((
+        DirectionalLight {
             color: Color::srgb(0.98, 0.95, 0.82),
             shadows_enabled: true,
             ..default()
         },
-        transform: Transform::from_xyz(0.0, 0.0, 0.0)
-            .looking_at(Vec3::new(-0.15, -0.05, 0.25), Vec3::Y),
+        Transform::from_xyz(0.0, 0.0, 0.0).looking_at(Vec3::new(-0.15, -0.05, 0.25), Vec3::Y),
         cascade_shadow_config,
-        ..default()
-    });
+    ));
 
-    // // Sky, might wanna use a skybox later
+    // Sky, might wanna use a skybox later
     c.spawn((
-        PbrBundle {
-            mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
-            material: materials.add(StandardMaterial {
-                base_color: Srgba::hex("888888").unwrap().into(),
-                unlit: true,
-                cull_mode: None,
-                ..default()
-            }),
-            transform: Transform::from_scale(Vec3::splat(100_000_000.0)),
+        Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: Srgba::hex("888888").unwrap().into(),
+            unlit: true,
+            cull_mode: None,
             ..default()
-        },
+        })),
+        Transform::from_scale(Vec3::splat(100_000_000.0)),
         NotShadowCaster,
     ));
 
     // Terrain
-    c.spawn(PbrBundle {
-        mesh: meshes.add(Plane3d::new(Vec3::Y, Vec2::splat(100_000.0))),
-        material: materials.add(Color::WHITE),
-        ..default()
-    });
+    c.spawn((
+        Mesh3d(meshes.add(Plane3d::new(Vec3::Y, Vec2::splat(100_000.0)))),
+        MeshMaterial3d(materials.add(Color::WHITE)),
+    ));
 
+    // Blocks
     const LEN: f32 = 2.0;
     let mesh = meshes.add(Cuboid::from_length(LEN));
     let material = materials.add(Color::BLACK);
     for i in 0..10 {
-        c.spawn(PbrBundle {
-            mesh: mesh.clone(),
-            material: material.clone(),
-            transform: Transform::from_translation(Vec3::new(LEN * 2.0 * i as f32, LEN * 0.5, 0.0)),
-            ..default()
-        });
+        c.spawn((
+            Mesh3d(mesh.clone()),
+            MeshMaterial3d(material.clone()),
+            Transform::from_translation(Vec3::new(LEN * 2.0 * i as f32, LEN * 0.5, 0.0)),
+        ));
     }
 }

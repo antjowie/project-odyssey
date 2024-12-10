@@ -131,7 +131,6 @@ fn update_rail_planner(
             })
         });
 
-        // Update state
         if input.just_pressed(&PlayerInput::Interact) {
             let mut rail = c.spawn(RailBundle::default());
             let rail_id = rail.id();
