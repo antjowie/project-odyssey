@@ -228,15 +228,19 @@ pub fn debug_draw_rail_path(
             // Draw neighbors
             for neighbor in joint.n_joints {
                 if let Some(neighbor) = neighbor {
-                    let target_joint = q.get(neighbor.rail_entity).unwrap();
-                    gizmos.line(
-                        joint.collision.center().into(),
-                        target_joint.joints[neighbor.joint_idx]
-                            .collision
-                            .center()
-                            .into(),
-                        Color::srgb(0.1, 1.0, 0.1),
-                    );
+                    // If update_rail_planner runs parallel to this system, the entity is already created but
+                    // the component is not yet created. We could also chain this system after update_rail_planner
+                    // but I think it's faster to guard against none values
+                    if let Ok(target_joint) = q.get(neighbor.rail_entity) {
+                        gizmos.line(
+                            joint.collision.center().into(),
+                            target_joint.joints[neighbor.joint_idx]
+                                .collision
+                                .center()
+                                .into(),
+                            Color::srgb(0.1, 1.0, 0.1),
+                        );
+                    }
                 }
             }
         };
