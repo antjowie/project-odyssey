@@ -162,12 +162,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc7eb209b1518d6bb87b283c20095f5228ecda460da70b44f0802523dea6da04"
 
 [[package]]
-name = "android-tzdata"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e999941b234f3131b00bc13c22d06e8c5ff726d1b6318ac7eb276997bbb4fef0"
-
-[[package]]
 name = "android_log-sys"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1583,18 +1577,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
-name = "chrono"
-version = "0.4.39"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e36cc9d416881d2e24f9a963be5fb1cd90966419ac844274161d10488b3e825"
-dependencies = [
- "android-tzdata",
- "iana-time-zone",
- "num-traits",
- "windows-targets 0.52.6",
-]
-
-[[package]]
 name = "clang-sys"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2571,29 +2553,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "iana-time-zone"
-version = "0.1.61"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "235e081f3925a06703c2d0117ea8b91f042756fd6e7a6e5d901e8ca1a996b220"
-dependencies = [
- "android_system_properties",
- "core-foundation-sys",
- "iana-time-zone-haiku",
- "js-sys",
- "wasm-bindgen",
- "windows-core 0.52.0",
-]
-
-[[package]]
-name = "iana-time-zone-haiku"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f31827a206f56af32e590ba56d5d2d085f558508192593743f16b2306495269f"
-dependencies = [
- "cc",
-]
-
-[[package]]
 name = "idna"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2687,16 +2646,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49f1f14873335454500d59611f1cf4a4b0f786f9ac11f4312a78e4cf2566695b"
 
 [[package]]
-name = "iyes_perf_ui"
-version = "0.4.0-rc.1"
-source = "git+https://github.com/IyesGames/iyes_perf_ui?rev=d8f3cbb2ec486b85a86b21e1aa32dcebd26ac884#d8f3cbb2ec486b85a86b21e1aa32dcebd26ac884"
-dependencies = [
- "bevy",
- "chrono",
- "num-traits",
-]
-
-[[package]]
 name = "jni"
 version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2777,8 +2726,9 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "leafwing-input-manager"
-version = "0.15.1"
-source = "git+https://github.com/Leafwing-Studios/leafwing-input-manager?rev=d40715f2cf13aa3d3bcaa8fc5c33ed65c7abb8fd#d40715f2cf13aa3d3bcaa8fc5c33ed65c7abb8fd"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c89e71d2afcb4afae71f5f064fe709d15a379bb6b42397ef4d89cb9d5bd0f5bf"
 dependencies = [
  "bevy",
  "derive_more 0.99.18",
@@ -2793,8 +2743,9 @@ dependencies = [
 
 [[package]]
 name = "leafwing_input_manager_macros"
-version = "0.15.1"
-source = "git+https://github.com/Leafwing-Studios/leafwing-input-manager?rev=d40715f2cf13aa3d3bcaa8fc5c33ed65c7abb8fd#d40715f2cf13aa3d3bcaa8fc5c33ed65c7abb8fd"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b30df0fc3244190ab3b651f27a0e626b0d5e279768740437886a5d32ec5ac099"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -3619,7 +3570,6 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "bevy-inspector-egui",
- "iyes_perf_ui",
  "leafwing-input-manager",
  "petgraph",
 ]
@@ -4894,15 +4844,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd04d41d93c4992d421894c18c8b43496aa748dd4c081bac0dc93eb0489272b6"
 dependencies = [
  "windows-core 0.58.0",
- "windows-targets 0.52.6",
-]
-
-[[package]]
-name = "windows-core"
-version = "0.52.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33ab640c8d7e35bf8ba19b884ba838ceb4fba93a4e8c65a9059d08afcfc683d9"
-dependencies = [
  "windows-targets 0.52.6",
 ]
 

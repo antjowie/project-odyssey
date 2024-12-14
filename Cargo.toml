@@ -31,6 +31,5 @@ strip = true
 [dependencies]
 bevy = "0.15.0"
 bevy-inspector-egui = "0.28.0"
-iyes_perf_ui = { git = "https://github.com/IyesGames/iyes_perf_ui", rev = "d8f3cbb2ec486b85a86b21e1aa32dcebd26ac884" }
-leafwing-input-manager = { git = "https://github.com/Leafwing-Studios/leafwing-input-manager", rev = "d40715f2cf13aa3d3bcaa8fc5c33ed65c7abb8fd" }
+leafwing-input-manager = "0.16.0"
 petgraph = "0.6.5"
