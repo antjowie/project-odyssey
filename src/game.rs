@@ -92,6 +92,7 @@ pub struct PlayerCursor {
 pub enum PlayerInput {
     Interact,
     Cancel,
+    CancelMouse,
     Pause,
     SnapToGrid,
     Rotate,
@@ -107,6 +108,7 @@ impl PlayerInput {
             .with(PlayerInput::Interact, MouseButton::Left)
             .with(PlayerInput::Cancel, KeyCode::KeyE)
             .with(PlayerInput::Cancel, KeyCode::Escape)
+            .with(PlayerInput::CancelMouse, MouseButton::Right)
             .with(PlayerInput::Pause, KeyCode::Escape)
             .with(PlayerInput::SnapToGrid, KeyCode::ControlLeft)
             .with(PlayerInput::Rotate, KeyCode::KeyR)
@@ -190,12 +192,13 @@ fn update_cursor(
 }
 
 fn process_state_change(
-    mut q: Query<(&mut PlayerState, &ActionState<PlayerInput>), With<NetOwner>>,
+    mut q: Query<(&PlayerCursor, &mut PlayerState, &ActionState<PlayerInput>), With<NetOwner>>,
     mut previews: Query<&mut BuildingPreview, With<NetOwner>>,
     mut ev_player_state: EventWriter<PlayerStateEvent>,
     mut exit: EventWriter<AppExit>,
+    mut cancel_mouse_pos: Local<Vec2>,
 ) {
-    let (mut state, input) = q.single_mut();
+    let (cursor, mut state, input) = q.single_mut();
     let old_state = state.clone();
 
     match *state {
@@ -215,6 +218,14 @@ fn process_state_change(
             });
 
             if input.just_pressed(&PlayerInput::Cancel) {
+                *state = PlayerState::Viewing;
+            }
+
+            if input.just_pressed(&PlayerInput::CancelMouse) {
+                *cancel_mouse_pos = cursor.screen_pos.unwrap_or_default();
+            } else if input.just_released(&PlayerInput::CancelMouse)
+                && *cancel_mouse_pos == cursor.screen_pos.unwrap_or_default()
+            {
                 *state = PlayerState::Viewing;
             }
         }
