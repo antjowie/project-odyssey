@@ -63,13 +63,13 @@ impl Rail {
                 RailPathJoint {
                     pos: start,
                     forward: plan.start_forward,
-                    collision: Aabb3d::new(start + dir * size, Vec3::splat(size)),
+                    collision: BoundingSphere::new(start + dir * size, size),
                     n_joints: [None; 3],
                 },
                 RailPathJoint {
                     pos: end,
                     forward: plan.end_forward,
-                    collision: Aabb3d::new(end - dir * size, Vec3::splat(size)),
+                    collision: BoundingSphere::new(end - dir * size, size),
                     n_joints: [None; 3],
                 },
             ],
@@ -116,8 +116,7 @@ pub struct RailPathJoint {
     pub pos: Vec3,
     // Vector that represents the direction this joint goes towards. Used when we extend from this joint
     pub forward: Vec3,
-    // TODO: Probs wanna use an OBB or look into triggers with MeshPickingPlugin
-    pub collision: Aabb3d,
+    pub collision: BoundingSphere,
     // Neighbor joints
     pub n_joints: [Option<RailPathJointRef>; 3],
 }
@@ -174,10 +173,12 @@ fn get_joint_collision(rail_path: &Rail, sphere: BoundingSphere) -> Option<&Rail
 pub fn debug_draw_rail_path(
     mut gizmos: Gizmos,
     q: Query<&Rail>,
+    preview: Query<&RailPlanner>,
     cursor: Query<&PlayerCursor, With<NetOwner>>,
 ) {
     let cursor = cursor.single();
     let cursor_sphere = BoundingSphere::new(cursor.build_pos, 0.1);
+    let preview_exists = !preview.is_empty();
 
     q.into_iter().for_each(|state| {
         // Draw line
@@ -215,15 +216,28 @@ pub fn debug_draw_rail_path(
 
         let mut draw_joint = |joint: &RailPathJoint| {
             // Draw collision
-            gizmos.cuboid(
-                Transform::from_translation(joint.collision.center().into())
-                    .with_scale(joint.collision.half_size().into()),
-                if collision.is_some_and(|x| x.pos == joint.pos) {
+            let collides_joint = collision.is_some_and(|x| x.pos == joint.pos);
+
+            gizmos.sphere(
+                Isometry3d::from_translation(joint.collision.center),
+                joint.collision.radius(),
+                if collides_joint {
                     Color::srgb(1.0, 0.0, 0.0)
                 } else {
                     Color::WHITE
                 },
             );
+
+            if collides_joint && !preview_exists {
+                let center: Vec3 = joint.collision.center.into();
+                gizmos
+                    .arrow(
+                        center,
+                        center + joint.forward * joint.collision.radius() * 2.,
+                        Color::srgb(0., 1., 0.),
+                    )
+                    .with_tip_length(joint.collision.radius());
+            }
 
             // Draw neighbors
             for neighbor in joint.n_joints {
