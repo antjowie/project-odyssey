@@ -182,17 +182,16 @@ pub fn debug_draw_rail_path(
 
     q.into_iter().for_each(|state| {
         // Draw line
-        let seg_distance = state.joints[RAIL_START_JOINT]
+        let length = state.joints[RAIL_START_JOINT]
             .pos
-            .distance(state.joints[RAIL_END_JOINT].pos)
-            * 0.25;
+            .distance(state.joints[RAIL_END_JOINT].pos);
 
         let points = [[
             state.joints[RAIL_START_JOINT].pos,
             state.joints[RAIL_START_JOINT].pos
-                + (-state.joints[RAIL_START_JOINT].forward) * seg_distance,
+                + (-state.joints[RAIL_START_JOINT].forward) * length * 0.5,
             state.joints[RAIL_END_JOINT].pos
-                + (-state.joints[RAIL_END_JOINT].forward) * seg_distance,
+                + (-state.joints[RAIL_END_JOINT].forward) * length * 0.5,
             state.joints[RAIL_END_JOINT].pos,
         ]];
 

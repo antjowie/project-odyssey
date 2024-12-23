@@ -60,11 +60,13 @@ pub fn in_player_state(
 
 #[derive(Default, Reflect, PartialEq)]
 pub enum PathRotationMode {
-    // Use manually defined rotation
-    Manual,
-    // Automatically rotate to an ideal position
     #[default]
+    // Keep aligned with start joint
     Straight,
+    // Share same angle between start and end joint
+    Curve,
+    // Align end joint with direction between end and start point
+    Chase,
 }
 
 #[derive(Event)]
@@ -177,11 +179,12 @@ fn update_cursor(
     }
 
     if input.just_pressed(&PlayerInput::CyclePathRotateMode) {
-        cursor.rotation_mode = if cursor.rotation_mode == PathRotationMode::Straight {
-            PathRotationMode::Manual
-        } else {
-            PathRotationMode::Straight
-        }
+        cursor.rotation_mode = match cursor.rotation_mode {
+            PathRotationMode::Straight => PathRotationMode::Curve,
+            PathRotationMode::Curve => PathRotationMode::Chase,
+            PathRotationMode::Chase => PathRotationMode::Straight,
+        };
+        cursor.manual_rotation = 0.;
     }
 
     cursor.build_pos = if cursor.should_snap_to_grid {

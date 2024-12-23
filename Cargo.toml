@@ -31,5 +31,6 @@ strip = true
 [dependencies]
 bevy = "0.15.0"
 bevy-inspector-egui = "0.28.0"
+bevy_egui = "0.31.1"
 leafwing-input-manager = { "version" = "0.16.0", features = ["egui"] }
 petgraph = "0.6.5"

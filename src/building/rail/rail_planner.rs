@@ -1,3 +1,7 @@
+use std::f32::consts::FRAC_PI_2;
+
+use bevy::{gizmos, math::vec3};
+
 /// Logic responsible for generating a preview of what RailBuilding will be built
 use super::*;
 
@@ -111,6 +115,7 @@ fn preview_initial_rail_planner_placement(
 }
 
 fn update_rail_planner(
+    mut gizmos: Gizmos,
     mut c: Commands,
     mut q: Query<&mut RailPlanner>,
     mut rail_states: Query<(Entity, &mut Rail)>,
@@ -137,10 +142,18 @@ fn update_rail_planner(
                     plan.end_forward = -plan.start_forward;
                 }
             }
-            PathRotationMode::Manual => {
-                plan.end_forward = Quat::from_rotation_y(cursor.manual_rotation) * Vec3::X;
+            PathRotationMode::Curve => {
+                let incidence = -plan.start_forward;
+                let towards_2d = Vec2::from_angle(FRAC_PI_2).rotate(towards.xz());
+                let normal = vec3(towards_2d.x, 0., towards_2d.y);
+                gizmos.line(plan.start, plan.start + normal, Color::BLACK);
+                plan.end_forward = incidence.reflect(normal);
+            }
+            PathRotationMode::Chase => {
+                plan.end_forward = towards;
             }
         }
+        plan.end_forward = Quat::from_rotation_y(cursor.manual_rotation) * plan.end_forward;
 
         // Check if we connected with an joint for our end
         plan.end_joint = rail_states.into_iter().find_map(|(e, state)| {
@@ -166,6 +179,7 @@ fn update_rail_planner(
                 &plan,
             ));
             plan.start = plan.end;
+            plan.start_forward = -plan.end_forward;
             plan.start_joint = Some(RailPathJointRef {
                 rail_entity: rail.id(),
                 joint_idx: RAIL_END_JOINT,
@@ -177,13 +191,13 @@ fn update_rail_planner(
 fn draw_rail_planner(mut gizmos: Gizmos, q: Query<&RailPlanner>) {
     q.into_iter().for_each(|plan| {
         // Draw line
-        let towards = plan.end - plan.start;
+        let length = (plan.end - plan.start).length();
         // let seg_distance = plan.start.distance(plan.end) * 0.25;
 
         let points = [[
             plan.start,
-            plan.start + towards.project_onto(-plan.start_forward) * 0.5,
-            plan.end + (-towards).project_onto(-plan.end_forward) * 0.5,
+            plan.start - plan.start_forward * length * 0.5,
+            plan.end - plan.end_forward * length * 0.5,
             plan.end,
         ]];
 
