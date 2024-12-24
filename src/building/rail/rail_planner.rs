@@ -190,17 +190,7 @@ fn update_rail_planner(
 
 fn draw_rail_planner(mut gizmos: Gizmos, q: Query<&RailPlanner>) {
     q.into_iter().for_each(|plan| {
-        // Draw line
-        let length = (plan.end - plan.start).length();
-        // let seg_distance = plan.start.distance(plan.end) * 0.25;
-
-        let points = [[
-            plan.start,
-            plan.start - plan.start_forward * length * 0.5,
-            plan.end - plan.end_forward * length * 0.5,
-            plan.end,
-        ]];
-
+        let points = curve_points(plan.start, plan.start_forward, plan.end, plan.end_forward);
         gizmos.linestrip(points[0], Color::srgb(1.0, 0.1, 0.1));
 
         let curve = CubicBezier::new(points).to_curve().unwrap();

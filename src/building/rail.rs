@@ -112,6 +112,22 @@ impl Rail {
     }
 }
 
+pub fn curve_points(
+    start: Vec3,
+    start_forward: Vec3,
+    end: Vec3,
+    end_forward: Vec3,
+) -> [[Vec3; 4]; 1] {
+    let length = (end - start).length();
+
+    [[
+        start,
+        start - start_forward * length * 0.5,
+        end - end_forward * length * 0.5,
+        end,
+    ]]
+}
+
 pub struct RailPathJoint {
     pub pos: Vec3,
     // Vector that represents the direction this joint goes towards. Used when we extend from this joint
@@ -182,18 +198,12 @@ pub fn debug_draw_rail_path(
 
     q.into_iter().for_each(|state| {
         // Draw line
-        let length = state.joints[RAIL_START_JOINT]
-            .pos
-            .distance(state.joints[RAIL_END_JOINT].pos);
-
-        let points = [[
+        let points = curve_points(
             state.joints[RAIL_START_JOINT].pos,
-            state.joints[RAIL_START_JOINT].pos
-                + (-state.joints[RAIL_START_JOINT].forward) * length * 0.5,
-            state.joints[RAIL_END_JOINT].pos
-                + (-state.joints[RAIL_END_JOINT].forward) * length * 0.5,
+            state.joints[RAIL_START_JOINT].forward,
             state.joints[RAIL_END_JOINT].pos,
-        ]];
+            state.joints[RAIL_END_JOINT].forward,
+        );
 
         let curve = CubicBezier::new(points).to_curve().unwrap();
         const STEPS: usize = 10;
