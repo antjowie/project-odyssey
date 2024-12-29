@@ -212,7 +212,6 @@ fn update_rail_planner(
                         let right = right - middle;
                         let angle = left.angle_between(right);
                         let max = (angle).max(max);
-                        println!("angle {}", angle.to_degrees());
                         max
                     },
                 );

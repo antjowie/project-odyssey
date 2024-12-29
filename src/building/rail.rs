@@ -133,10 +133,13 @@ pub fn create_curve_control_points(
 pub fn create_curve_points(points: [[Vec3; 4]; 1]) -> Vec<Vec3> {
     let start = points[0][0];
     let end = points[0][3];
+    let segments = ((start.distance(end) / RAIL_MIN_LENGTH).round() as usize)
+        .max(2)
+        .min(10);
     CubicBezier::new(points)
         .to_curve()
         .unwrap()
-        .iter_positions((start.distance(end) / RAIL_MIN_LENGTH).round().max(2.) as usize)
+        .iter_positions(segments)
         .collect()
 }
 
