@@ -1,6 +1,6 @@
 use std::f32::consts::FRAC_PI_2;
 
-use bevy::{gizmos, math::vec3};
+use bevy::math::vec3;
 
 /// Logic responsible for generating a preview of what RailBuilding will be built
 use super::*;
@@ -23,6 +23,7 @@ pub fn rail_planner_plugin(app: &mut App) {
 }
 
 #[derive(Component)]
+#[require(Text, Node)]
 pub struct RailPlanner {
     pub start: Vec3,
     pub start_forward: Vec3,
@@ -32,6 +33,7 @@ pub struct RailPlanner {
     pub start_joint: Option<RailPathJointRef>,
     // Joint we end with, and want to connect to
     pub end_joint: Option<RailPathJointRef>,
+    pub status: RailPlannerStatus,
 }
 
 impl RailPlanner {
@@ -43,8 +45,19 @@ impl RailPlanner {
             end_forward: start_pos.normalize_or(Vec3::X),
             start_joint: None,
             end_joint: None,
+            status: RailPlannerStatus::Valid,
         }
     }
+}
+
+#[derive(Default, PartialEq)]
+pub enum RailPlannerStatus {
+    #[default]
+    Valid,
+    CurveTooSharp(f32),
+    // Our delta angle is too close to any other curves in our joint
+    CurveTooShallow(f32),
+    RailTooShort(f32),
 }
 
 fn create_rail_planner(
@@ -117,21 +130,22 @@ fn preview_initial_rail_planner_placement(
 fn update_rail_planner(
     mut gizmos: Gizmos,
     mut c: Commands,
-    mut q: Query<&mut RailPlanner>,
+    mut q: Query<(&mut RailPlanner, &mut Text, &mut Node)>,
     mut rail_states: Query<(Entity, &mut Rail)>,
     player_state: Query<(&PlayerCursor, &ActionState<PlayerInput>), With<NetOwner>>,
 ) {
     let (cursor, input) = player_state.single();
     let cursor_sphere = BoundingSphere::new(cursor.build_pos, 0.1);
 
-    q.iter_mut().for_each(|mut plan| {
+    q.iter_mut().for_each(|(mut plan, mut text, mut node)| {
         plan.end = cursor.build_pos;
         // Min length check
         if plan.end.distance_squared(plan.start) < 1.0 {
             plan.end = (plan.end - plan.start).normalize() + plan.start;
         }
 
-        let towards = (plan.end - plan.start).normalize();
+        let delta = plan.end - plan.start;
+        let towards = delta.normalize();
         match cursor.rotation_mode {
             PathRotationMode::Straight => {
                 if plan.start_joint.is_none() {
@@ -155,7 +169,7 @@ fn update_rail_planner(
         }
         plan.end_forward = Quat::from_rotation_y(cursor.manual_rotation) * plan.end_forward;
 
-        // Check if we connected with an joint for our end
+        // Check if we hover over a joint for end pos
         plan.end_joint = rail_states.into_iter().find_map(|(e, state)| {
             get_joint_collision(state, cursor_sphere).and_then(|joint| {
                 plan.end = joint.pos;
@@ -171,7 +185,64 @@ fn update_rail_planner(
             })
         });
 
-        if input.just_pressed(&PlayerInput::Interact) {
+        // Validate our plan
+        let length = delta.length();
+        println!("printing");
+
+        plan.status = if length < RAIL_MIN_LENGTH && plan.end_joint.is_none() {
+            RailPlannerStatus::RailTooShort(delta.length())
+            // TODO: Check joints
+        } else if false {
+            RailPlannerStatus::CurveTooShallow(0.)
+        } else {
+            let points: Vec<Vec3> = create_curve_points(create_curve_control_points(
+                plan.start,
+                plan.start_forward,
+                plan.end,
+                plan.end_forward,
+            ));
+            let first_segment = points[1] - points[0];
+            let angle = points
+                .iter()
+                .zip(points.iter().skip(1).zip(points.iter().skip(2)))
+                .fold(
+                    (-plan.start_forward).angle_between(first_segment),
+                    |max, (left, (middle, right))| {
+                        let left = middle - left;
+                        let right = right - middle;
+                        let angle = left.angle_between(right);
+                        let max = (angle).max(max);
+                        println!("angle {}", angle.to_degrees());
+                        max
+                    },
+                );
+            if angle > RAIL_MAX_RADIANS {
+                RailPlannerStatus::CurveTooSharp(angle)
+            } else {
+                RailPlannerStatus::Valid
+            }
+        };
+
+        text.0 = match plan.status {
+            RailPlannerStatus::Valid => "".into(),
+            RailPlannerStatus::CurveTooSharp(x) => {
+                format!("Curve Too Sharp {:.2}", x.to_degrees()).into()
+            }
+            RailPlannerStatus::CurveTooShallow(x) => {
+                format!("Curve Too Shallow {:.2}", x.to_degrees()).into()
+            }
+            RailPlannerStatus::RailTooShort(x) => {
+                format!("Rail Too Short {:.2} < {:2}", x, RAIL_MIN_LENGTH).into()
+            }
+        };
+
+        if let Some(pos) = cursor.screen_pos {
+            node.left = Val::Px(pos.x);
+            node.top = Val::Px(pos.y - 32.);
+        }
+
+        // We have an intention to build
+        if input.just_pressed(&PlayerInput::Interact) && plan.status == RailPlannerStatus::Valid {
             let mut rail = c.spawn_empty();
             rail.insert(Rail::new(
                 rail.id(),
@@ -190,12 +261,18 @@ fn update_rail_planner(
 
 fn draw_rail_planner(mut gizmos: Gizmos, q: Query<&RailPlanner>) {
     q.into_iter().for_each(|plan| {
-        let points = curve_points(plan.start, plan.start_forward, plan.end, plan.end_forward);
-        gizmos.linestrip(points[0], Color::srgb(1.0, 0.1, 0.1));
+        let points =
+            create_curve_control_points(plan.start, plan.start_forward, plan.end, plan.end_forward);
+        // Draw our control points
+        gizmos.linestrip(points[0], Color::srgb(0.5, 0.5, 0.5));
 
-        let curve = CubicBezier::new(points).to_curve().unwrap();
-        const STEPS: usize = 10;
-        gizmos.linestrip(curve.iter_positions(STEPS), Color::WHITE);
+        // Draw our curve
+        let color = if plan.status == RailPlannerStatus::Valid {
+            Color::srgb(0.1, 0.1, 1.0)
+        } else {
+            Color::srgb(1.0, 0.1, 0.1)
+        };
+        gizmos.linestrip(create_curve_points(points), color);
         // info!(
         //     "points {:?}\n
         //     pos {:?}",
