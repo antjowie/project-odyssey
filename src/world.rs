@@ -26,52 +26,43 @@ fn setup_world(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     // --- Controls
-    c.spawn((
-        Text::new(
-            " 
-- Camera controls - 
-Translate/panning - WASD/Middle mouse
-Orbiting - Right mouse
-Zooming - Scroll
+    //     c.spawn((
+    //         Text::new(
+    //             "
+    // - Camera controls -
+    // Translate/panning - WASD/Middle mouse
+    // Orbiting - Right mouse
+    // Zooming - Scroll
 
-- Build controls - 
-Build mode - Left mouse
-Build - Left mouse
-View mode - Esc/E
-Rotate - R
-Counter Rotate - Shift + R
-Snap Rotate - Ctrl + R
-Counter Snap Rotate - Ctrl + Shift + R
-Cycle path rotate mode (straight/manual) - Tab
-Toggle snap to grid - Ctrl",
-        ),
-        TextLayout::new_with_justify(JustifyText::Left),
-        Node {
-            position_type: PositionType::Absolute,
-            bottom: Val::Px(10.0),
-            left: Val::Px(10.0),
+    // - Build controls -
+    // Build mode - Left mouse
+    // Build - Left mouse
+    // View mode - Esc/E
+    // Rotate - R
+    // Counter Rotate - Shift + R
+    // Snap Rotate - Ctrl + R
+    // Counter Snap Rotate - Ctrl + Shift + R
+    // Cycle path rotate mode (straight/manual) - Tab
+    // Toggle snap to grid - Ctrl",
+    //         ),
+    //         TextLayout::new_with_justify(JustifyText::Left),
+    //         Node {
+    //             position_type: PositionType::Absolute,
+    //             bottom: Val::Px(10.0),
+    //             left: Val::Px(10.0),
 
-            ..default()
-        },
-    ));
+    //             ..default()
+    //         },
+    //     ));
 
     // --- Gameplay
     // Player State
-    c.spawn((
-        NetOwner,
-        PlayerStateBundle {
-            input: InputManagerBundle::with_map(PlayerInput::default_player_mapping()),
-            ..default()
-        },
-    ));
+    c.spawn((NetOwner, PlayerState::default()));
 
     // Camera
     c.spawn((
         NetOwner,
-        PanOrbitCameraBundle {
-            input: InputManagerBundle::with_map(CameraAction::default_player_mapping()),
-            ..default()
-        },
+        PanOrbitCamera::default(),
         DistanceFog {
             color: Color::srgba(0.35, 0.48, 0.66, 1.0),
             directional_light_color: Color::srgba(1.0, 0.95, 0.85, 0.5),

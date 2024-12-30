@@ -3,13 +3,13 @@ name = "project_odyssey"
 version = "0.1.0"
 edition = "2021"
 
-[profile.dev]
-opt-level = 1
-
+# We need optimizations, otherwise we run into linker issues https://bevyengine.org/learn/quick-start/getting-started/setup/#enable-fast-compiles-optional
+# 2 works, but 3 is reco (and 2 doesn't really give that much more extra info)
 [profile.dev.package."*"]
 opt-level = 3
+[profile.dev-nodebug.package."*"]
+opt-level = 3
 
-# Debug info seems to have quite a significant impact on linking times
 [profile.dev-nodebug]
 inherits = "dev"
 debug = false

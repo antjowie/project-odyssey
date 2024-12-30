@@ -1,4 +1,5 @@
 use std::f32::consts::PI;
+use std::fmt;
 
 use bevy::color::palettes::tailwind::*;
 use bevy::picking::pointer::PointerInteraction;
@@ -8,6 +9,7 @@ use leafwing_input_manager::prelude::*;
 
 use crate::building::*;
 use crate::camera::*;
+use crate::input::*;
 
 /// All game systems and rules
 /// 100 units is 1 meter
@@ -15,7 +17,7 @@ pub struct GamePlugin;
 
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(InputManagerPlugin::<PlayerInput>::default());
+        app.add_plugins(InputDisplayPlugin::<PlayerInput>::default());
         app.add_event::<PlayerStateEvent>();
         app.add_systems(PreUpdate, update_cursor.after(InputManagerSystem::Update));
         app.add_systems(
@@ -38,14 +40,8 @@ impl Plugin for GamePlugin {
 #[derive(Component)]
 pub struct NetOwner;
 
-#[derive(Bundle, Default)]
-pub struct PlayerStateBundle {
-    pub state: PlayerState,
-    pub cursor: PlayerCursor,
-    pub input: InputManagerBundle<PlayerInput>,
-}
-
 #[derive(Component, Default, PartialEq, Clone)]
+#[require(PlayerCursor, InputActions<PlayerInput>)]
 pub enum PlayerState {
     #[default]
     Viewing,
@@ -90,6 +86,7 @@ pub struct PlayerCursor {
     pub world_grid_pos: Vec3,
 }
 
+// TODO: Instead of one big player input object, split it in contextual input actions, so we have one for view mode and build mode
 #[derive(Actionlike, PartialEq, Eq, Hash, Clone, Copy, Debug, Reflect)]
 pub enum PlayerInput {
     Interact,
@@ -104,8 +101,8 @@ pub enum PlayerInput {
     CyclePathRotateMode,
 }
 
-impl PlayerInput {
-    pub fn default_player_mapping() -> InputMap<PlayerInput> {
+impl InputConfig for PlayerInput {
+    fn default_input_map() -> InputMap<Self> {
         InputMap::default()
             .with(PlayerInput::Interact, MouseButton::Left)
             .with(PlayerInput::Cancel, KeyCode::KeyE)
@@ -124,10 +121,21 @@ impl PlayerInput {
             )
             .with(
                 PlayerInput::SnapCounterRotate,
-                ButtonlikeChord::modified(ModifierKey::Shift, KeyCode::KeyR)
-                    .with(ModifierKey::Control),
+                ButtonlikeChord::default()
+                    .with(ModifierKey::Control)
+                    .with(ModifierKey::Shift)
+                    .with(KeyCode::KeyR),
             )
             .with(PlayerInput::CyclePathRotateMode, KeyCode::Tab)
+    }
+    fn group_name() -> String {
+        "Player Input".into()
+    }
+}
+
+impl fmt::Display for PlayerInput {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self, f)
     }
 }
 

@@ -1,4 +1,6 @@
-use crate::game::*;
+use std::fmt;
+
+use crate::{game::*, input::*};
 use bevy::{
     math::vec3,
     prelude::*,
@@ -15,13 +17,12 @@ impl Plugin for CameraPlugin {
             // Grab Cursor will likely need a software cursor, cuz the harware impl seems to not have a lot of parity
             (update_pan_orbit_camera).run_if(any_with_component::<PanOrbitCamera>),
         );
-        app.add_plugins(InputManagerPlugin::<CameraAction>::default());
+        app.add_plugins(InputDisplayPlugin::<CameraAction>::default());
         app.register_type::<PanOrbitCamera>();
         app.register_type::<PanOrbitCameraSettings>();
     }
 }
 
-// This is the list of "things in the game I want to be able to do based on input"
 #[derive(Actionlike, PartialEq, Eq, Hash, Clone, Copy, Debug, Reflect)]
 pub enum CameraAction {
     #[actionlike(DualAxis)]
@@ -33,8 +34,8 @@ pub enum CameraAction {
     Zoom,
 }
 
-impl CameraAction {
-    pub fn default_player_mapping() -> InputMap<CameraAction> {
+impl InputConfig for CameraAction {
+    fn default_input_map() -> InputMap<Self> {
         InputMap::default()
             .with_dual_axis(CameraAction::Translate, VirtualDPad::wasd().inverted_y())
             .with(CameraAction::Pan, MouseButton::Middle)
@@ -46,10 +47,19 @@ impl CameraAction {
             // On windows our pixel value is 1, but on web it is 100 (or 125 if you use Windows scaling)
             .with_axis(CameraAction::Zoom, MouseScrollAxis::Y.inverted().digital())
     }
+    fn group_name() -> String {
+        "Camera Actions".into()
+    }
+}
+
+impl fmt::Display for CameraAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self, f)
+    }
 }
 
 #[derive(Reflect, Component)]
-#[require(Camera3d, PanOrbitCameraSettings)]
+#[require(Camera3d, PanOrbitCameraSettings, InputActions<CameraAction>)]
 pub struct PanOrbitCamera {
     pub center: Vec3,
     pub velocity: Vec3,
@@ -61,12 +71,6 @@ pub struct PanOrbitCamera {
     pub zoom: f32,
     pub pitch: f32,
     pub yaw: f32,
-}
-
-#[derive(Bundle, Default)]
-pub struct PanOrbitCameraBundle {
-    pub camera: PanOrbitCamera,
-    pub input: InputManagerBundle<CameraAction>,
 }
 
 impl Default for PanOrbitCamera {

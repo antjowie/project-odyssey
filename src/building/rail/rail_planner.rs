@@ -187,7 +187,6 @@ fn update_rail_planner(
 
         // Validate our plan
         let length = delta.length();
-        println!("printing");
 
         plan.status = if length < RAIL_MIN_LENGTH && plan.end_joint.is_none() {
             RailPlannerStatus::RailTooShort(delta.length())

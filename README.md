@@ -9,9 +9,15 @@ Rail editor
 - [] Setup rail planner validations
 - [] Setup basic UI, mostly for feedback
 - [] Add vertical rail building
-- [] Extend rail arbitrary from segment
 - [] Add segment deconstruction
+- [] Improve joint expansion
+  - [] There are 2 joints, when extending treat them as one and rotation will set left or right
+  - [] Extend rail arbitrary from segment
 - [] Add copy pasta? 
+
+Input
+- [] Use context based input components (this can control state)
+- [] Write context based input components to screen
 
 Pathfinding
 - [] Generate nav graph for rail
@@ -57,6 +63,15 @@ Maybe a mix between the 2? I feel fully deterministic could be more trouble then
 If network really ends up being a blocker, I could always do local simulation and resolve desyncs by reloading the game in clients :P
 https://www.youtube.com/watch?v=ueEmiDM94IE&t=2235s
 
+### 1.15 bevy migration
+Migration
+1. VBAO https://bevyengine.org/news/bevy-0-15/#visibility-bitmask-ambient-occlusion-vbao
+2. Entity picking https://bevyengine.org/news/bevy-0-15/#entity-picking-selection
+3. Bubbling https://bevyengine.org/news/bevy-0-15/#bubbling-observers
+4. Curves https://bevyengine.org/news/bevy-0-15/#curves
+5. Function reflection https://bevyengine.org/news/bevy-0-15/#function-reflection
+6. Custom cursors https://bevyengine.org/news/bevy-0-15/#custom-cursors
+
 ### Some nice resources
 * [Rust book](https://doc.rust-lang.org/book/)
 * [Bevy book](https://bevy-cheatbook.github.io/)
@@ -64,3 +79,9 @@ https://www.youtube.com/watch?v=ueEmiDM94IE&t=2235s
   * [Awesome Bevy (repo of info)](https://github.com/nolantait/awesome-bevy)
 * [ECS Guide](https://github.com/bevyengine/bevy/blob/v0.14.0/examples/ecs/ecs_guide.rs)
 * [Bevy Examples](https://bevyengine.org/examples/)
+
+### Some rust/bevy pain points
+* Debugger experience is subpar. A vec of dyn objects gives pretty much no info (pointer to pointer to pointer, nothning concrete) As does a Res type. It might be due to opt-levels but I can't put it lower cuz I run into linker limitations, why is the limit a 16bit integer anyway?
+  * For example, our input vec of type Buttonlike gives us `vec->buf->inner->ptr->pointer->pointer->*pointer = 0`... I'd expect some more concrete data but maybe the external lib just does some crazy stuff that I have to dive a bit deeper into
+* Iteration times are subpar. It's a bit of an unfair comparison but in Godot I can see my changes instantly and during runtime. Ofcourse, one is interpeted while the other has a crazy amount of safety guarantees, but the fact remains that for quickly testing stuff, it can feel slow.
+* Unable to easily browse symbols of dependencies, I gotta write the type and jump to it, I'd like to just ctrl+t and search for anything

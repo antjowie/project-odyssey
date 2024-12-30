@@ -4,6 +4,7 @@ mod building;
 mod camera;
 mod debug;
 mod game;
+mod input;
 mod world;
 
 pub struct AppPlugin;
