@@ -129,7 +129,6 @@ pub struct InputDisplayFrameData {
 
 pub struct InputDisplayCollection {
     /// Higher values are displayed higher in the list
-    pub order: i32,
     pub name: String,
     /// Entries are ordered by enum/action order
     pub entries: Vec<InputDisplayEntry>,
@@ -155,8 +154,8 @@ impl InputDisplayCollection {
             };
             let value = InputDisplayEntry {
                 action: format!("{action}"),
+                // TODO: Might be better to impl a visitor, or just impl UI feedback trait?
                 input: match inputs {
-                    // TODO: Might be better to impl a visitor, or just impl UI feedback trait?
                     BasicInputs::None => "None".into(),
                     BasicInputs::Simple(buttonlike) => get_key(buttonlike),
                     BasicInputs::Composite(vec) => {
@@ -257,7 +256,6 @@ impl InputDisplayCollection {
         action_entries.sort();
 
         InputDisplayCollection {
-            order: 0,
             name: A::group_name(),
             entries: action_entries
                 .iter()

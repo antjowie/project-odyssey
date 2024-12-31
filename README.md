@@ -17,7 +17,7 @@ Rail editor
 
 Input
 - [] Use context based input components (this can control state)
-- [] Write context based input components to screen
+- [x] Write context based input components to screen
 
 Pathfinding
 - [] Generate nav graph for rail
