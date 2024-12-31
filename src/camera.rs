@@ -23,7 +23,7 @@ impl Plugin for CameraPlugin {
     }
 }
 
-#[derive(Actionlike, PartialEq, Eq, Hash, Clone, Copy, Debug, Reflect)]
+#[derive(Actionlike, PartialEq, Eq, Hash, Clone, Copy, Debug, Reflect, PartialOrd, Ord)]
 pub enum CameraAction {
     #[actionlike(DualAxis)]
     Translate,

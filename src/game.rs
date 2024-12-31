@@ -87,7 +87,7 @@ pub struct PlayerCursor {
 }
 
 // TODO: Instead of one big player input object, split it in contextual input actions, so we have one for view mode and build mode
-#[derive(Actionlike, PartialEq, Eq, Hash, Clone, Copy, Debug, Reflect)]
+#[derive(Actionlike, PartialEq, Eq, Hash, Clone, Copy, Debug, Reflect, PartialOrd, Ord)]
 pub enum PlayerInput {
     Interact,
     Cancel,
