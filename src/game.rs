@@ -135,7 +135,11 @@ impl InputConfig for PlayerInput {
 
 impl fmt::Display for PlayerInput {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self, f)
+        if self == &PlayerInput::CyclePathRotateMode {
+            write!(f, "{:?} Straight/Curve/Chase", self)
+        } else {
+            fmt::Debug::fmt(&self, f)
+        }
     }
 }
 

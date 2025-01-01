@@ -114,7 +114,7 @@ fn spawn_input_display_ui(mut c: Commands) {
         TextLayout::new_with_justify(JustifyText::Left),
         Node {
             position_type: PositionType::Absolute,
-            bottom: Val::Px(10.0),
+            top: Val::Px(10.0),
             left: Val::Px(10.0),
 
             ..default()
