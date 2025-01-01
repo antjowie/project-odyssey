@@ -1,24 +1,22 @@
-use bevy::{pbr::NotShadowCaster, prelude::*};
+//! Any buildings that can be built and placed
+use super::*;
+use bevy::pbr::NotShadowCaster;
 
+use rail::*;
 mod rail;
-pub use rail::*;
 
-pub struct BuildingPlugin;
-
-impl Plugin for BuildingPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_systems(Startup, load_assets);
-        app.add_plugins(rail_plugin);
-        // app.add_systems(
-        //     Update,
-        //     (
-        //         on_add_build_preview_component,
-        //         update_build_preview_material,
-        //     )
-        //         .chain(),
-        // );
-        // app.add_systems(PostUpdate, on_remove_build_preview_component);
-    }
+pub(super) fn build_plugin(app: &mut App) {
+    app.add_systems(Startup, load_assets);
+    app.add_plugins(rail_plugin);
+    // app.add_systems(
+    //     Update,
+    //     (
+    //         on_add_build_preview_component,
+    //         update_build_preview_material,
+    //     )
+    //         .chain(),
+    // );
+    // app.add_systems(PostUpdate, on_remove_build_preview_component);
 }
 
 #[derive(Resource, PartialEq)]

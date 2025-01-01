@@ -1,11 +1,10 @@
+//! Entrypoint of the app
 use bevy::prelude::*;
 
-mod building;
 mod camera;
 mod debug;
 mod game;
 mod input;
-mod world;
 
 pub struct AppPlugin;
 
@@ -23,11 +22,9 @@ impl Plugin for AppPlugin {
                 },
             ),
             MeshPickingPlugin,
-            building::BuildingPlugin,
             camera::CameraPlugin,
             debug::DebugPlugin,
             game::GamePlugin,
-            world::WorldPlugin,
         ));
     }
 }

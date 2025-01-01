@@ -1,16 +1,12 @@
-use std::f32::consts::PI;
+use super::*;
+use bevy::math::bounding::{BoundingSphere, BoundingVolume, IntersectsVolume};
 
-use crate::building::*;
-use crate::game::*;
 use rail_planner::*;
-
-use bevy::math::bounding::{Aabb3d, BoundingSphere, BoundingVolume, IntersectsVolume};
-use leafwing_input_manager::prelude::*;
 
 mod rail_graph;
 mod rail_planner;
 
-pub fn rail_plugin(app: &mut App) {
+pub(super) fn rail_plugin(app: &mut App) {
     // app.add_systems(Update, (on_place_rail, debug_draw_rail_path));
     app.add_plugins((
         rail_graph::rail_graph_plugin,
@@ -149,7 +145,7 @@ pub struct RailPathJoint {
     pub forward: Vec3,
     pub collision: BoundingSphere,
     // Neighbor joints
-    pub n_joints: [Option<RailPathJointRef>; 3],
+    pub n_joints: [Option<RailPathJointRef>; RAIL_CURVES_MAX],
 }
 
 impl RailPathJoint {

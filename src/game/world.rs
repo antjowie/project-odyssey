@@ -1,60 +1,17 @@
-use crate::camera::*;
-use crate::game::*;
+//! Loads our initial world
+use super::*;
+use bevy::pbr::{CascadeShadowConfigBuilder, DirectionalLightShadowMap, NotShadowCaster};
 
-use bevy::pbr::DirectionalLightShadowMap;
-use bevy::pbr::FogVolume;
-use bevy::pbr::ScreenSpaceAmbientOcclusion;
-use bevy::pbr::VolumetricFog;
-use bevy::{
-    pbr::{CascadeShadowConfigBuilder, NotShadowCaster},
-    prelude::*,
-};
-use leafwing_input_manager::prelude::*;
-
-pub struct WorldPlugin;
-
-impl Plugin for WorldPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup_world);
-        app.insert_resource(DirectionalLightShadowMap { size: 4096 });
-    }
+pub(super) fn world_plugin(app: &mut App) {
+    app.insert_resource(DirectionalLightShadowMap { size: 4096 });
+    app.add_systems(Startup, spawn_test_world);
 }
 
-fn setup_world(
+fn spawn_test_world(
     mut c: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    // --- Controls
-    //     c.spawn((
-    //         Text::new(
-    //             "
-    // - Camera controls -
-    // Translate/panning - WASD/Middle mouse
-    // Orbiting - Right mouse
-    // Zooming - Scroll
-
-    // - Build controls -
-    // Build mode - Left mouse
-    // Build - Left mouse
-    // View mode - Esc/E
-    // Rotate - R
-    // Counter Rotate - Shift + R
-    // Snap Rotate - Ctrl + R
-    // Counter Snap Rotate - Ctrl + Shift + R
-    // Cycle path rotate mode (straight/manual) - Tab
-    // Toggle snap to grid - Ctrl",
-    //         ),
-    //         TextLayout::new_with_justify(JustifyText::Left),
-    //         Node {
-    //             position_type: PositionType::Absolute,
-    //             bottom: Val::Px(10.0),
-    //             left: Val::Px(10.0),
-
-    //             ..default()
-    //         },
-    //     ));
-
     // --- Gameplay
     // Player State
     c.spawn((NetOwner, PlayerState::default()));

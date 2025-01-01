@@ -1,3 +1,10 @@
+//! Any logic or systems strongly related to gameplay and content are grouped under the game crate
+//! These systems are made with the purpose to serve gameplay. It wouldn't make sense to use them outside
+//! of this context.
+//!
+//! You could argue input and camera are also strongly game related, but these systems can still be used without
+//! knowing about anything game related. To not bloat the root and ease reuse, the distinction is made.
+
 use std::f32::consts::PI;
 use std::fmt;
 
@@ -7,9 +14,13 @@ use bevy::{math::*, prelude::*, window::PrimaryWindow};
 use leafwing_input_manager::plugin::InputManagerSystem;
 use leafwing_input_manager::prelude::*;
 
-use crate::building::*;
 use crate::camera::*;
 use crate::input::*;
+use building::*;
+use world::*;
+
+mod building;
+mod world;
 
 /// All game systems and rules
 /// 100 units is 1 meter
@@ -34,6 +45,9 @@ impl Plugin for GamePlugin {
             ),
         );
         app.register_type::<PlayerCursor>();
+
+        app.add_plugins(build_plugin);
+        app.add_plugins(world_plugin);
     }
 }
 
