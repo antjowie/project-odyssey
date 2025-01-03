@@ -3,8 +3,8 @@ use bevy::math::bounding::{BoundingSphere, BoundingVolume, IntersectsVolume};
 
 use rail_planner::*;
 
-mod rail_graph;
-mod rail_planner;
+pub mod rail_graph;
+pub mod rail_planner;
 
 pub(super) fn rail_plugin(app: &mut App) {
     // app.add_systems(Update, (on_place_rail, debug_draw_rail_path));

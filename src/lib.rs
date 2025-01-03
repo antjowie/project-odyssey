@@ -1,11 +1,12 @@
 //! Entrypoint of the app
 use bevy::prelude::*;
 
-mod camera;
-mod debug;
-mod game;
-mod input;
+pub mod camera;
+pub mod debug;
+pub mod game;
+pub mod input;
 
+/// Plugin that represents the game
 pub struct AppPlugin;
 
 impl Plugin for AppPlugin {

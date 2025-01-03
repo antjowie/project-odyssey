@@ -6,32 +6,32 @@ A train simulator "game"?
 ### Todo
 
 Rail editor
-- [] Setup rail planner validations
-- [] Setup basic UI, mostly for feedback
-- [] Add vertical rail building
-- [] Add segment deconstruction
-- [] Improve joint expansion
-  - [] There are 2 joints, when extending treat them as one and rotation will set left or right
-  - [] Extend rail arbitrary from segment
-- [] Add copy pasta? 
+- [ ] Setup rail planner validations
+- [ ] Setup basic UI, mostly for feedback
+- [ ] Add vertical rail building
+- [ ] Add segment deconstruction
+- [ ] Improve joint expansion
+  - [ ] There are 2 joints, when extending treat them as one and rotation will set left or right
+  - [ ] Extend rail arbitrary from segment
+- [ ] Add copy pasta? 
 
 Input
-- [] Use context based input components (this can control state)
+- [ ] Use context based input components (this can control state)
 - [x] Write context based input components to screen
 
 Pathfinding
-- [] Generate nav graph for rail
-- [] Support setting destinations
+- [ ] Generate nav graph for rail
+- [ ] Support setting destinations
   - Need to somehow know which node depending on which segment we hovered
-- [] Add trafic control via signals
+- [ ] Add trafic control via signals
   - I'm thinking of each link having a traffic id which maps to a map
   - Then in the map we track which trains are on which tracks, so we can use this to calc weights and such
 
 General gameplay
-- [] Add save and load
+- [ ] Add save and load
 
 Visuals
-- [] Generate procedural mesh from spline
+- [ ] Generate procedural mesh from spline
 
 ### Build
 You can use cargo as you always would, simply `cargo run` would suffice.
@@ -83,5 +83,5 @@ Migration
 ### Some rust/bevy pain points
 * Debugger experience is subpar. A vec of dyn objects gives pretty much no info (pointer to pointer to pointer, nothning concrete) As does a Res type. It might be due to opt-levels but I can't put it lower cuz I run into linker limitations, why is the limit a 16bit integer anyway?
   * For example, our input vec of type Buttonlike gives us `vec->buf->inner->ptr->pointer->pointer->*pointer = 0`... I'd expect some more concrete data but maybe the external lib just does some crazy stuff that I have to dive a bit deeper into
-* Iteration times are subpar. It's a bit of an unfair comparison but in Godot I can see my changes instantly and during runtime. Ofcourse, one is interpeted while the other has a crazy amount of safety guarantees, but the fact remains that for quickly testing stuff, it can feel slow.
 * Unable to easily browse symbols of dependencies, I gotta write the type and jump to it, I'd like to just ctrl+t and search for anything
+  * Upon further investigation this is a setting that can be configured `"rust-analyzer.workspace.symbol.search.scope": "workspace_and_dependencies"`. Unfortunately it is very slow and even worse, I can no longer find my own symbols

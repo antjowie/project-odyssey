@@ -1,4 +1,5 @@
-//! Any logic or systems strongly related to gameplay and content are grouped under the game crate
+//! Any logic or systems strongly related to gameplay and content are grouped under the game module
+//!
 //! These systems are made with the purpose to serve gameplay. It wouldn't make sense to use them outside
 //! of this context.
 //!
@@ -17,8 +18,8 @@ use crate::input::*;
 use building::*;
 use world::*;
 
-mod building;
-mod world;
+pub mod building;
+pub mod world;
 
 /// All game systems and rules
 /// 100 units is 1 meter
