@@ -1,6 +1,6 @@
 //! Input system to support displaying entries, changing keybindings.
-//! To faciliate input handling consider any input as an contextual object.
 //!
+//! To facilitate input handling consider any input as an contextual object.
 //! You create an enum of actions you want this context to do. These actions can be executed by anything,
 //! but usually it will be through input response.
 //!
@@ -82,7 +82,7 @@ use std::{
 };
 
 /// Add this component to an entity to start tracking input state
-/// You can get the actual value by querrying for &ActionState<A>
+/// You can get the actual value by querrying for `&ActionState<A>`
 #[derive(Component)]
 #[require(ActionState<A>, InputMap<A>(|| A::default_input_map()))]
 pub struct InputContext<A: InputContextlike> {

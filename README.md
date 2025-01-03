@@ -6,32 +6,32 @@ A train simulator "game"?
 ### Todo
 
 Rail editor
-- [] Setup rail planner validations
-- [] Setup basic UI, mostly for feedback
-- [] Add vertical rail building
-- [] Add segment deconstruction
-- [] Improve joint expansion
-  - [] There are 2 joints, when extending treat them as one and rotation will set left or right
-  - [] Extend rail arbitrary from segment
-- [] Add copy pasta? 
+- [ ] Setup rail planner validations
+- [ ] Setup basic UI, mostly for feedback
+- [ ] Add vertical rail building
+- [ ] Add segment deconstruction
+- [ ] Improve joint expansion
+  - [ ] There are 2 joints, when extending treat them as one and rotation will set left or right
+  - [ ] Extend rail arbitrary from segment
+- [ ] Add copy pasta? 
 
 Input
-- [] Use context based input components (this can control state)
+- [ ] Use context based input components (this can control state)
 - [x] Write context based input components to screen
 
 Pathfinding
-- [] Generate nav graph for rail
-- [] Support setting destinations
+- [ ] Generate nav graph for rail
+- [ ] Support setting destinations
   - Need to somehow know which node depending on which segment we hovered
-- [] Add trafic control via signals
+- [ ] Add trafic control via signals
   - I'm thinking of each link having a traffic id which maps to a map
   - Then in the map we track which trains are on which tracks, so we can use this to calc weights and such
 
 General gameplay
-- [] Add save and load
+- [ ] Add save and load
 
 Visuals
-- [] Generate procedural mesh from spline
+- [ ] Generate procedural mesh from spline
 
 ### Build
 You can use cargo as you always would, simply `cargo run` would suffice.
