@@ -11,8 +11,6 @@ use std::fmt;
 use bevy::color::palettes::tailwind::*;
 use bevy::picking::pointer::PointerInteraction;
 use bevy::{math::*, prelude::*, window::PrimaryWindow};
-use leafwing_input_manager::plugin::InputManagerSystem;
-use leafwing_input_manager::prelude::*;
 
 use crate::camera::*;
 use crate::input::*;
@@ -28,7 +26,7 @@ pub struct GamePlugin;
 
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(InputDisplayPlugin::<PlayerInput>::default());
+        app.add_plugins(InputContextPlugin::<PlayerAction>::default());
         app.add_event::<PlayerStateEvent>();
         app.add_systems(PreUpdate, update_cursor.after(InputManagerSystem::Update));
         app.add_systems(
@@ -55,7 +53,7 @@ impl Plugin for GamePlugin {
 pub struct NetOwner;
 
 #[derive(Component, Default, PartialEq, Clone)]
-#[require(PlayerCursor, InputActions<PlayerInput>)]
+#[require(PlayerCursor, InputContext<PlayerAction>)]
 pub enum PlayerState {
     #[default]
     Viewing,
@@ -102,7 +100,7 @@ pub struct PlayerCursor {
 
 // TODO: Instead of one big player input object, split it in contextual input actions, so we have one for view mode and build mode
 #[derive(Actionlike, PartialEq, Eq, Hash, Clone, Copy, Debug, Reflect, PartialOrd, Ord)]
-pub enum PlayerInput {
+pub enum PlayerAction {
     Interact,
     Cancel,
     CancelMouse,
@@ -115,41 +113,41 @@ pub enum PlayerInput {
     CyclePathRotateMode,
 }
 
-impl InputConfig for PlayerInput {
+impl InputContextlike for PlayerAction {
     fn default_input_map() -> InputMap<Self> {
         InputMap::default()
-            .with(PlayerInput::Interact, MouseButton::Left)
-            .with(PlayerInput::Cancel, KeyCode::KeyE)
-            .with(PlayerInput::Cancel, KeyCode::Escape)
-            .with(PlayerInput::CancelMouse, MouseButton::Right)
-            .with(PlayerInput::Pause, KeyCode::Escape)
-            .with(PlayerInput::SnapToGrid, KeyCode::ControlLeft)
-            .with(PlayerInput::Rotate, KeyCode::KeyR)
+            .with(PlayerAction::Interact, MouseButton::Left)
+            .with(PlayerAction::Cancel, KeyCode::KeyE)
+            .with(PlayerAction::Cancel, KeyCode::Escape)
+            .with(PlayerAction::CancelMouse, MouseButton::Right)
+            .with(PlayerAction::Pause, KeyCode::Escape)
+            .with(PlayerAction::SnapToGrid, KeyCode::ControlLeft)
+            .with(PlayerAction::Rotate, KeyCode::KeyR)
             .with(
-                PlayerInput::SnapRotate,
+                PlayerAction::SnapRotate,
                 ButtonlikeChord::modified(ModifierKey::Control, KeyCode::KeyR),
             )
             .with(
-                PlayerInput::CounterRotate,
+                PlayerAction::CounterRotate,
                 ButtonlikeChord::modified(ModifierKey::Shift, KeyCode::KeyR),
             )
             .with(
-                PlayerInput::SnapCounterRotate,
+                PlayerAction::SnapCounterRotate,
                 ButtonlikeChord::default()
                     .with(ModifierKey::Control)
                     .with(ModifierKey::Shift)
                     .with(KeyCode::KeyR),
             )
-            .with(PlayerInput::CyclePathRotateMode, KeyCode::Tab)
+            .with(PlayerAction::CyclePathRotateMode, KeyCode::Tab)
     }
     fn group_name() -> String {
-        "Player Input".into()
+        "Player Actions".into()
     }
 }
 
-impl fmt::Display for PlayerInput {
+impl fmt::Display for PlayerAction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self == &PlayerInput::CyclePathRotateMode {
+        if self == &PlayerAction::CyclePathRotateMode {
             write!(f, "{:?} Straight/Curve/Chase", self)
         } else {
             fmt::Debug::fmt(&self, f)
@@ -160,7 +158,7 @@ impl fmt::Display for PlayerInput {
 fn update_cursor(
     windows: Query<&Window, With<PrimaryWindow>>,
     cameras: Query<(&PanOrbitCamera, &Camera, &GlobalTransform)>,
-    mut q: Query<(&mut PlayerCursor, &ActionState<PlayerInput>), With<NetOwner>>,
+    mut q: Query<(&mut PlayerCursor, &ActionState<PlayerAction>), With<NetOwner>>,
     time: Res<Time>,
 ) {
     let window = windows.single();
@@ -185,26 +183,26 @@ fn update_cursor(
     }
     cursor.world_grid_pos = cursor.world_pos.round();
 
-    if input.just_pressed(&PlayerInput::SnapToGrid) {
+    if input.just_pressed(&PlayerAction::SnapToGrid) {
         cursor.should_snap_to_grid = !cursor.should_snap_to_grid;
     }
 
-    if input.pressed(&PlayerInput::Rotate) {
+    if input.pressed(&PlayerAction::Rotate) {
         cursor.manual_rotation -= PI * 0.5 * time.delta_secs();
     }
-    if input.pressed(&PlayerInput::CounterRotate) {
+    if input.pressed(&PlayerAction::CounterRotate) {
         cursor.manual_rotation += PI * 0.5 * time.delta_secs();
     }
 
     const SNAP_ROT: f32 = PI * 0.5;
-    if input.just_pressed(&PlayerInput::SnapRotate) {
+    if input.just_pressed(&PlayerAction::SnapRotate) {
         cursor.manual_rotation = (cursor.manual_rotation / SNAP_ROT).round() * SNAP_ROT - SNAP_ROT;
     }
-    if input.just_pressed(&PlayerInput::SnapCounterRotate) {
+    if input.just_pressed(&PlayerAction::SnapCounterRotate) {
         cursor.manual_rotation = (cursor.manual_rotation / SNAP_ROT).round() * SNAP_ROT + SNAP_ROT;
     }
 
-    if input.just_pressed(&PlayerInput::CyclePathRotateMode) {
+    if input.just_pressed(&PlayerAction::CyclePathRotateMode) {
         cursor.rotation_mode = match cursor.rotation_mode {
             PathRotationMode::Straight => PathRotationMode::Curve,
             PathRotationMode::Curve => PathRotationMode::Chase,
@@ -221,7 +219,7 @@ fn update_cursor(
 }
 
 fn process_state_change(
-    mut q: Query<(&PlayerCursor, &mut PlayerState, &ActionState<PlayerInput>), With<NetOwner>>,
+    mut q: Query<(&PlayerCursor, &mut PlayerState, &ActionState<PlayerAction>), With<NetOwner>>,
     mut previews: Query<&mut BuildingPreview, With<NetOwner>>,
     mut ev_player_state: EventWriter<PlayerStateEvent>,
     mut exit: EventWriter<AppExit>,
@@ -232,27 +230,27 @@ fn process_state_change(
 
     match *state {
         PlayerState::Viewing => {
-            if input.just_pressed(&PlayerInput::Interact) {
+            if input.just_pressed(&PlayerAction::Interact) {
                 *state = PlayerState::Building;
             }
 
-            if input.just_pressed(&PlayerInput::Pause) {
+            if input.just_pressed(&PlayerAction::Pause) {
                 exit.send(AppExit::Success);
             }
         }
         PlayerState::Building => {
-            let wants_to_place = input.just_pressed(&PlayerInput::Interact);
+            let wants_to_place = input.just_pressed(&PlayerAction::Interact);
             previews.iter_mut().for_each(|mut preview| {
                 preview.wants_to_place = wants_to_place;
             });
 
-            if input.just_pressed(&PlayerInput::Cancel) {
+            if input.just_pressed(&PlayerAction::Cancel) {
                 *state = PlayerState::Viewing;
             }
 
-            if input.just_pressed(&PlayerInput::CancelMouse) {
+            if input.just_pressed(&PlayerAction::CancelMouse) {
                 *cancel_mouse_pos = cursor.screen_pos.unwrap_or_default();
-            } else if input.just_released(&PlayerInput::CancelMouse)
+            } else if input.just_released(&PlayerAction::CancelMouse)
                 && *cancel_mouse_pos == cursor.screen_pos.unwrap_or_default()
             {
                 *state = PlayerState::Viewing;

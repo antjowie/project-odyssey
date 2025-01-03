@@ -6,7 +6,6 @@ use bevy::{
     prelude::*,
     window::{CursorGrabMode, PrimaryWindow},
 };
-use leafwing_input_manager::prelude::*;
 
 pub struct CameraPlugin;
 
@@ -17,7 +16,7 @@ impl Plugin for CameraPlugin {
             // Grab Cursor will likely need a software cursor, cuz the harware impl seems to not have a lot of parity
             (update_pan_orbit_camera).run_if(any_with_component::<PanOrbitCamera>),
         );
-        app.add_plugins(InputDisplayPlugin::<CameraAction>::default());
+        app.add_plugins(InputContextPlugin::<CameraAction>::default());
         app.register_type::<PanOrbitCamera>();
         app.register_type::<PanOrbitCameraSettings>();
     }
@@ -34,7 +33,7 @@ pub enum CameraAction {
     Zoom,
 }
 
-impl InputConfig for CameraAction {
+impl InputContextlike for CameraAction {
     fn default_input_map() -> InputMap<Self> {
         InputMap::default()
             .with_dual_axis(CameraAction::Translate, VirtualDPad::wasd().inverted_y())
@@ -59,7 +58,7 @@ impl fmt::Display for CameraAction {
 }
 
 #[derive(Reflect, Component)]
-#[require(Camera3d, PanOrbitCameraSettings, InputActions<CameraAction>)]
+#[require(Camera3d, PanOrbitCameraSettings, InputContext<CameraAction>)]
 pub struct PanOrbitCamera {
     pub center: Vec3,
     pub velocity: Vec3,

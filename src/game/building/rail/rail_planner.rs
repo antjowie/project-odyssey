@@ -63,7 +63,7 @@ pub enum RailPlannerStatus {
 fn create_rail_planner(
     mut c: Commands,
     q: Query<Entity, (With<RailPlanner>, With<NetOwner>)>,
-    player_state: Query<(&PlayerCursor, &ActionState<PlayerInput>), With<NetOwner>>,
+    player_state: Query<(&PlayerCursor, &ActionState<PlayerAction>), With<NetOwner>>,
     rail_states: Query<(Entity, &Rail)>,
     mut event: EventReader<PlayerStateEvent>,
 ) {
@@ -77,7 +77,7 @@ fn create_rail_planner(
     // TODO: Creation of correct preview visual should be handled generically if we want to build more then only rails
     //       which we want. We still need to place trains on the rails
     let (cursor, input) = player_state.single();
-    if q.is_empty() && input.just_pressed(&PlayerInput::Interact) {
+    if q.is_empty() && input.just_pressed(&PlayerAction::Interact) {
         let cursor_sphere = BoundingSphere::new(cursor.build_pos, 0.1);
 
         let mut plan = RailPlanner::new(cursor.build_pos);
@@ -132,7 +132,7 @@ fn update_rail_planner(
     mut c: Commands,
     mut q: Query<(&mut RailPlanner, &mut Text, &mut Node)>,
     mut rail_states: Query<(Entity, &mut Rail)>,
-    player_state: Query<(&PlayerCursor, &ActionState<PlayerInput>), With<NetOwner>>,
+    player_state: Query<(&PlayerCursor, &ActionState<PlayerAction>), With<NetOwner>>,
 ) {
     let (cursor, input) = player_state.single();
     let cursor_sphere = BoundingSphere::new(cursor.build_pos, 0.1);
@@ -240,7 +240,7 @@ fn update_rail_planner(
         }
 
         // We have an intention to build
-        if input.just_pressed(&PlayerInput::Interact) && plan.status == RailPlannerStatus::Valid {
+        if input.just_pressed(&PlayerAction::Interact) && plan.status == RailPlannerStatus::Valid {
             let mut rail = c.spawn_empty();
             rail.insert(Rail::new(
                 rail.id(),

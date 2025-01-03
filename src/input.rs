@@ -1,11 +1,28 @@
-//! Wrapper around input so we can display a dynamic list of possible actions
-//! as well as input remaping and all that stuff
+//! Input system to support displaying entries, changing keybindings.
+//! To faciliate input handling consider any input as an contextual object.
 //!
-//! To use you need to do the following
+//! You create an enum of actions you want this context to do. These actions can be executed by anything,
+//! but usually it will be through input response.
+//!
+//! Consider a player editor. We can have the following InputContexts:
+//! * InGameAction
+//!     * PauseGame
+//! * PlayerViewAction
+//!     * EnterBuildMode
+//!     * InspectCursor
+//! * PlayerBuildAction
+//!     * EnterViewMode
+//!     * Place
+//!     * Remove
+//!     
+//! InputContext can be related with states, and we create and destroy them when entering the associated states.
+//! By using this system we can generate a list of actionable inputs based on the current context
+//!
+//! To use you need to do the following:
 //! ```
 //! // 1. Create an action enum
 //! #[derive(Actionlike, PartialEq, Eq, Hash, Clone, Copy, Debug, Reflect)]
-//! pub enum CameraAction {
+//! enum CameraAction {
 //!     #[actionlike(DualAxis)]
 //!     Translate,
 //!     Pan,
@@ -14,8 +31,9 @@
 //!     #[actionlike(Axis)]
 //!     Zoom,
 //! }
+//!
 //! // 2. Implement a default mapping
-//! impl InputConfig for CameraAction {
+//! impl InputContextlike for CameraAction {
 //! fn default_input_map() -> InputMap<Self> {
 //!     InputMap::default()
 //!         .with_dual_axis(CameraAction::Translate, VirtualDPad::wasd().inverted_y())
@@ -31,7 +49,6 @@
 //! }
 //!
 //! // 3. Implement Display trait, can usually directly map debug unless you want to localize enums
-//!
 //! impl fmt::Display for CameraAction {
 //! fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 //!     fmt::Debug::fmt(&self, f)
@@ -41,29 +58,55 @@
 //! // 4. Register the plugin
 //! impl Plugin for CameraPlugin {
 //! fn build(&self, app: &mut App) {
-//!     app.add_plugins(InputDisplayPlugin::<CameraAction>::default());
+//!     app.add_plugins(InputContextPlugin::<CameraAction>::default());
 //!     //...
 //! }
 //! }
-//! ```
+//!
+//! // 5. Add the InputContext as a required component to our relevant component
+//! #[derive(Component)]
+//! #[require(InputContext<CameraAction>)]
+//! struct Camera();
+
+use bevy::{
+    prelude::*,
+    utils::hashbrown::{HashMap, HashSet},
+};
+pub use leafwing_input_manager::{
+    clashing_inputs::BasicInputs, plugin::InputManagerSystem, prelude::*,
+};
 
 use std::{
     fmt::{Display, Write},
     marker::PhantomData,
 };
 
-use bevy::{
-    prelude::*,
-    utils::hashbrown::{HashMap, HashSet},
-};
-use leafwing_input_manager::{clashing_inputs::BasicInputs, prelude::*};
-
-pub struct InputDisplayPlugin<A: InputConfig> {
-    _phantom: PhantomData<A>,
+/// Add this component to an entity to start tracking input state
+/// You can get the actual value by querrying for &ActionState<A>
+#[derive(Component)]
+#[require(ActionState<A>, InputMap<A>(|| A::default_input_map()))]
+pub struct InputContext<A: InputContextlike> {
+    // If empty, display all inputs in InputMap
+    pub display_whitelist: HashSet<A>,
 }
 
 // Deriving default induces an undesired bound on the generic
-impl<A: InputConfig> Default for InputDisplayPlugin<A> {
+impl<A: InputContextlike> Default for InputContext<A> {
+    fn default() -> Self {
+        Self {
+            display_whitelist: HashSet::<A>::default(),
+        }
+    }
+}
+
+/// Implement this trait for any InputContext
+pub trait InputContextlike: Actionlike + Display + Ord + Clone {
+    fn default_input_map() -> InputMap<Self>;
+    fn group_name() -> String;
+}
+
+// Deriving default induces an undesired bound on the generic
+impl<A: InputContextlike> Default for InputContextPlugin<A> {
     fn default() -> Self {
         Self {
             _phantom: PhantomData,
@@ -71,12 +114,17 @@ impl<A: InputConfig> Default for InputDisplayPlugin<A> {
     }
 }
 
-impl<A: InputConfig + TypePath + bevy::reflect::GetTypeRegistration> Plugin
-    for InputDisplayPlugin<A>
+/// Plugin to add for each action context you specify
+pub struct InputContextPlugin<A: InputContextlike> {
+    _phantom: PhantomData<A>,
+}
+
+impl<A: InputContextlike + TypePath + bevy::reflect::GetTypeRegistration> Plugin
+    for InputContextPlugin<A>
 {
     fn build(&self, app: &mut App) {
-        if !app.is_plugin_added::<InputDisplaySetupPlugin>() {
-            app.add_plugins(InputDisplaySetupPlugin);
+        if !app.is_plugin_added::<InputSetupPlugin>() {
+            app.add_plugins(InputSetupPlugin);
         }
 
         app.add_plugins(InputManagerPlugin::<A>::default());
@@ -87,59 +135,37 @@ impl<A: InputConfig + TypePath + bevy::reflect::GetTypeRegistration> Plugin
     }
 }
 
-struct InputDisplaySetupPlugin;
+struct InputSetupPlugin;
 
-impl Plugin for InputDisplaySetupPlugin {
+impl Plugin for InputSetupPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<InputDisplayFrameData>();
+        app.init_resource::<AllInputContextEntries>();
         app.add_systems(Startup, spawn_input_display_ui);
         app.add_systems(
             Update,
-            update_input_display_text.run_if(resource_changed::<InputDisplayFrameData>),
+            update_input_display_text.run_if(resource_changed::<AllInputContextEntries>),
         );
     }
 }
 
-#[derive(Component)]
-struct InputDisplayUIMarker;
-
-fn spawn_input_display_ui(mut c: Commands) {
-    c.spawn((
-        InputDisplayUIMarker,
-        Text::default(),
-        TextFont {
-            font_size: 15.,
-            ..Default::default()
-        },
-        TextLayout::new_with_justify(JustifyText::Left),
-        Node {
-            position_type: PositionType::Absolute,
-            top: Val::Px(10.0),
-            left: Val::Px(10.0),
-
-            ..default()
-        },
-    ));
-}
-
+/// Resource caching all input context entries
 #[derive(Resource, Default)]
-pub struct InputDisplayFrameData {
-    pub inputs: Vec<InputDisplayCollection>,
+pub struct AllInputContextEntries {
+    pub entries: Vec<InputContextEntries>,
 }
 
-pub struct InputDisplayCollection {
-    /// Higher values are displayed higher in the list
+pub struct InputContextEntries {
     pub name: String,
-    /// Entries are ordered by enum/action order
-    pub entries: Vec<InputDisplayEntry>,
+    /// Entries are ordered according to InputConfig Ord impl
+    pub entries: Vec<InputContextEntry>,
 }
 
-impl InputDisplayCollection {
-    fn new<A>(input_actions: &InputActions<A>, input_map: &InputMap<A>) -> Self
+impl InputContextEntries {
+    fn new<A>(input_actions: &InputContext<A>, input_map: &InputMap<A>) -> Self
     where
-        A: InputConfig,
+        A: InputContextlike,
     {
-        let mut map: HashMap<A, InputDisplayEntry> = HashMap::new();
+        let mut map: HashMap<A, InputContextEntry> = HashMap::new();
         // Keep a vec of all the action enums, so we can sort it and match
         let mut action_entries = vec![];
 
@@ -152,7 +178,7 @@ impl InputDisplayCollection {
                     .replace("ControlLeft", "Control")
                     .replace("ControlRight", "Control")
             };
-            let value = InputDisplayEntry {
+            let value = InputContextEntry {
                 action: format!("{action}"),
                 // TODO: Might be better to impl a visitor, or just impl UI feedback trait?
                 input: match inputs {
@@ -255,7 +281,7 @@ impl InputDisplayCollection {
         action_entries.dedup();
         action_entries.sort();
 
-        InputDisplayCollection {
+        InputContextEntries {
             name: A::group_name(),
             entries: action_entries
                 .iter()
@@ -266,49 +292,48 @@ impl InputDisplayCollection {
 }
 
 #[derive(Clone)]
-pub struct InputDisplayEntry {
+pub struct InputContextEntry {
     pub action: String,
     pub input: String,
 }
 
-/// Resembles a collection of input that correspond to actions. Add this component to get feedback and listen to input
 #[derive(Component)]
-#[require(ActionState<A>, InputMap<A>(|| A::default_input_map()))]
-pub struct InputActions<A: InputConfig> {
-    // If empty, display all inputs in InputMap
-    pub display_whitelist: HashSet<A>,
-}
+struct InputEntriesUIMaker;
 
-/// Our actions
-pub trait InputConfig: Actionlike + Display + Ord + Clone {
-    fn default_input_map() -> InputMap<Self>;
-    fn group_name() -> String;
-}
+fn spawn_input_display_ui(mut c: Commands) {
+    c.spawn((
+        InputEntriesUIMaker,
+        Text::default(),
+        TextFont {
+            font_size: 15.,
+            ..Default::default()
+        },
+        TextLayout::new_with_justify(JustifyText::Left),
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(10.0),
+            left: Val::Px(10.0),
 
-// Deriving default induces an undesired bound on the generic
-impl<A: InputConfig + InputConfig> Default for InputActions<A> {
-    fn default() -> Self {
-        Self {
-            display_whitelist: HashSet::<A>::default(),
-        }
-    }
+            ..default()
+        },
+    ));
 }
 
 fn collect_input_display<A>(
-    mut data: ResMut<InputDisplayFrameData>,
-    q: Query<(&InputActions<A>, &InputMap<A>), Or<(Added<InputMap<A>>, Changed<InputMap<A>>)>>,
+    mut data: ResMut<AllInputContextEntries>,
+    q: Query<(&InputContext<A>, &InputMap<A>), Or<(Added<InputMap<A>>, Changed<InputMap<A>>)>>,
 ) where
-    A: InputConfig,
+    A: InputContextlike,
 {
     q.iter().for_each(|(input_actions, input_map)| {
-        data.inputs
-            .push(InputDisplayCollection::new(input_actions, input_map))
+        data.entries
+            .push(InputContextEntries::new(input_actions, input_map))
     });
 }
 
 fn update_input_display_text(
-    mut data: ResMut<InputDisplayFrameData>,
-    mut q: Query<&mut Text, With<InputDisplayUIMarker>>,
+    mut data: ResMut<AllInputContextEntries>,
+    mut q: Query<&mut Text, With<InputEntriesUIMaker>>,
 ) {
     info!("Updating input display data");
     if q.is_empty() {
@@ -318,7 +343,7 @@ fn update_input_display_text(
     let mut text = q.single_mut();
     text.0.clear();
 
-    data.inputs.iter().for_each(|collection| {
+    data.entries.iter().for_each(|collection| {
         text.0
             .write_fmt(format_args!("{}\n", collection.name))
             .unwrap();
@@ -329,5 +354,5 @@ fn update_input_display_text(
         });
     });
 
-    *data.bypass_change_detection() = InputDisplayFrameData::default();
+    *data.bypass_change_detection() = AllInputContextEntries::default();
 }
