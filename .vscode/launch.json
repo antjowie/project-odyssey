@@ -1,31 +1,37 @@
+// Use IntelliSense to learn about possible attributes.
+// Hover to view descriptions of existing attributes.
+// For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug executable 'project_odyssey'",
-            "cargo": {
-                "args": [
-                    "build",
-                    "--bin=project_odyssey",
-                    "--package=project_odyssey",
-                    "--features=bevy/dynamic_linking",
-                ],
-                "filter": {
-                    "name": "project_odyssey",
-                    "kind": "bin"
-                }
-            },
-            "args": [],
-            "cwd": "${workspaceFolder}",
-            "env": {
-                "CARGO_MANIFEST_DIR": "${workspaceFolder}",
-                "PATH": "${env:USERPROFILE}/.rustup/toolchains/stable-x86_64-pc-windows-msvc/bin;${workspaceFolder}/target/debug/deps;${env:PATH}",
-            }
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug executable 'project_odyssey'",
+      "cargo": {
+        // Compile the 'project_odyssey' binary with dynamic linking and optional
+        // PanOrbit camera features (assuming you have it set up as "panorbit_camera").
+        "args": [
+          "build",
+          "--bin=project_odyssey",
+          "--package=project_odyssey",
+          "--features=bevy/dynamic_linking,panorbit_camera"
+        ],
+        "filter": {
+          "name": "project_odyssey",
+          "kind": "bin"
         }
-    ]
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "CARGO_MANIFEST_DIR": "${workspaceFolder}",
+        // Added a custom environment variable to enable
+        // advanced camera mechanics, if your game checks for it.
+        "ENABLE_PANORBIT_CAMERA": "1",
+        
+        "PATH": "${env:USERPROFILE}/.rustup/toolchains/stable-x86_64-pc-windows-msvc/bin;${workspaceFolder}/target/debug/deps;${env:PATH}"
+      }
+    }
+  ]
 }
