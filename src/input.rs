@@ -49,6 +49,7 @@
 //! }
 //!
 //! // 3. Implement Display trait, can usually directly map debug unless you want to localize enums
+//! // NOTE: You can also derive DisplayDebug to automatically generate this
 //! impl fmt::Display for CameraAction {
 //! fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 //!     fmt::Debug::fmt(&self, f)
@@ -67,19 +68,26 @@
 //! #[derive(Component)]
 //! #[require(InputContext<CameraAction>)]
 //! struct Camera();
+//!
+//! // 6. Then you can access the state of the input context with Query<&ActionState<CameraAction>>
+//!
 
-use bevy::{
-    prelude::*,
-    utils::hashbrown::{HashMap, HashSet},
-};
+pub use bevy::prelude::*;
+use bevy::utils::hashbrown::{HashMap, HashSet};
 pub use leafwing_input_manager::{
     clashing_inputs::BasicInputs, plugin::InputManagerSystem, prelude::*,
 };
+pub use project_odyssey_macros::DisplayDebug;
+pub use std::fmt;
 
-use std::{
-    fmt::{Display, Write},
-    marker::PhantomData,
-};
+use std::{fmt::Write, marker::PhantomData};
+
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum InputSet {
+    PurgeEntries,
+    CollectEntries,
+    EntriesCollected,
+}
 
 /// Add this component to an entity to start tracking input state
 /// You can get the actual value by querrying for `&ActionState<A>`
@@ -100,7 +108,7 @@ impl<A: InputContextlike> Default for InputContext<A> {
 }
 
 /// Implement this trait for any InputContext
-pub trait InputContextlike: Actionlike + Display + Ord + Clone {
+pub trait InputContextlike: Actionlike + std::fmt::Display + Ord + Clone {
     fn default_input_map() -> InputMap<Self>;
     fn group_name() -> String;
 }
@@ -130,7 +138,16 @@ impl<A: InputContextlike + TypePath + bevy::reflect::GetTypeRegistration> Plugin
         app.add_plugins(InputManagerPlugin::<A>::default());
         app.add_systems(
             Update,
-            collect_input_display::<A>.before(update_input_display_text),
+            (
+                (
+                    input_context_created::<A>.run_if(run_once),
+                    input_context_removed::<A>.run_if(any_component_removed::<InputContext<A>>),
+                )
+                    .in_set(InputSet::PurgeEntries),
+                collect_input_context_entries::<A>
+                    .run_if(resource_changed::<AllInputContextEntries>)
+                    .in_set(InputSet::CollectEntries),
+            ),
         );
     }
 }
@@ -140,15 +157,26 @@ struct InputSetupPlugin;
 impl Plugin for InputSetupPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<AllInputContextEntries>();
+        app.configure_sets(
+            Update,
+            (
+                InputSet::PurgeEntries.before(InputSet::CollectEntries),
+                InputSet::CollectEntries.before(InputSet::EntriesCollected),
+            ),
+        );
         app.add_systems(Startup, spawn_input_display_ui);
         app.add_systems(
             Update,
-            update_input_display_text.run_if(resource_changed::<AllInputContextEntries>),
+            update_input_display_text
+                .run_if(resource_changed::<AllInputContextEntries>)
+                .in_set(InputSet::EntriesCollected),
         );
     }
 }
 
 /// Resource caching all input context entries
+/// When this is modified all input contexts will accumulate their entries
+/// into this object
 #[derive(Resource, Default)]
 pub struct AllInputContextEntries {
     pub entries: Vec<InputContextEntries>,
@@ -298,11 +326,11 @@ pub struct InputContextEntry {
 }
 
 #[derive(Component)]
-struct InputEntriesUIMaker;
+struct InputDisplayUIMarker;
 
 fn spawn_input_display_ui(mut c: Commands) {
     c.spawn((
-        InputEntriesUIMaker,
+        InputDisplayUIMarker,
         Text::default(),
         TextFont {
             font_size: 15.,
@@ -319,23 +347,35 @@ fn spawn_input_display_ui(mut c: Commands) {
     ));
 }
 
-fn collect_input_display<A>(
+fn input_context_created<A>(mut data: ResMut<AllInputContextEntries>) {
+    *data = AllInputContextEntries::default();
+}
+
+fn input_context_removed<A>(mut data: ResMut<AllInputContextEntries>) {
+    *data = AllInputContextEntries::default();
+}
+
+fn collect_input_context_entries<A>(
     mut data: ResMut<AllInputContextEntries>,
-    q: Query<(&InputContext<A>, &InputMap<A>), Or<(Added<InputMap<A>>, Changed<InputMap<A>>)>>,
+    q: Query<(&InputContext<A>, &InputMap<A>)>,
 ) where
     A: InputContextlike,
 {
     q.iter().for_each(|(input_actions, input_map)| {
-        data.entries
+        data.bypass_change_detection()
+            .entries
             .push(InputContextEntries::new(input_actions, input_map))
     });
 }
 
 fn update_input_display_text(
-    mut data: ResMut<AllInputContextEntries>,
-    mut q: Query<&mut Text, With<InputEntriesUIMaker>>,
+    data: Res<AllInputContextEntries>,
+    mut q: Query<&mut Text, With<InputDisplayUIMarker>>,
 ) {
-    info!("Updating input display data");
+    info!(
+        "-- Updating input display data... ({}) entries",
+        data.entries.len()
+    );
     if q.is_empty() {
         return;
     }
@@ -353,6 +393,5 @@ fn update_input_display_text(
                 .unwrap()
         });
     });
-
-    *data.bypass_change_detection() = AllInputContextEntries::default();
+    info!("-- Updating input display data DONE");
 }

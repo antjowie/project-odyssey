@@ -3,7 +3,7 @@ use super::*;
 use bevy::pbr::NotShadowCaster;
 
 use rail::*;
-mod rail;
+pub mod rail;
 
 pub(super) fn build_plugin(app: &mut App) {
     app.add_systems(Startup, load_assets);

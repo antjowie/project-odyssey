@@ -29,6 +29,7 @@ debug = false
 strip = true
 
 [dependencies]
+project_odyssey_macros = { path = "macros" }
 bevy = "0.15.0"
 bevy-inspector-egui = "0.28.1"
 bevy_egui = "0.31.1"

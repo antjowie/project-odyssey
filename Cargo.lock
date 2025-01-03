@@ -3584,6 +3584,15 @@ dependencies = [
  "bevy_egui",
  "leafwing-input-manager",
  "petgraph 0.7.0",
+ "project_odyssey_macros",
+]
+
+[[package]]
+name = "project_odyssey_macros"
+version = "0.1.0"
+dependencies = [
+ "quote",
+ "syn",
 ]
 
 [[package]]

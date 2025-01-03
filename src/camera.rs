@@ -1,11 +1,10 @@
-use std::fmt;
-
 use crate::{game::*, input::*};
 use bevy::{
     math::vec3,
     prelude::*,
     window::{CursorGrabMode, PrimaryWindow},
 };
+use player::PlayerCursor;
 
 pub struct CameraPlugin;
 
@@ -22,7 +21,9 @@ impl Plugin for CameraPlugin {
     }
 }
 
-#[derive(Actionlike, PartialEq, Eq, Hash, Clone, Copy, Debug, Reflect, PartialOrd, Ord)]
+#[derive(
+    Actionlike, PartialEq, Eq, Hash, Clone, Copy, Debug, Reflect, PartialOrd, Ord, DisplayDebug,
+)]
 pub enum CameraAction {
     #[actionlike(DualAxis)]
     Translate,
@@ -48,12 +49,6 @@ impl InputContextlike for CameraAction {
     }
     fn group_name() -> String {
         "Camera Actions".into()
-    }
-}
-
-impl fmt::Display for CameraAction {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self, f)
     }
 }
 
