@@ -114,9 +114,10 @@ impl PlayerState {
         });
 
         let mut ec = c.entity(e);
+
         match self {
-            PlayerState::Viewing => ec.remove::<InputContext<PlayerViewAction>>(),
-            PlayerState::Building => ec.remove::<InputContext<PlayerBuildAction>>(),
+            PlayerState::Viewing => PlayerState::remove::<PlayerViewAction>(&mut ec),
+            PlayerState::Building => PlayerState::remove::<PlayerBuildAction>(&mut ec),
         };
 
         *self = new_state;
@@ -126,12 +127,16 @@ impl PlayerState {
             PlayerState::Building => ec.insert(InputContext::<PlayerBuildAction>::default()),
         };
     }
+
+    fn remove<T: InputContextlike>(ec: &mut EntityCommands) {
+        ec.remove::<InputContext<T>>();
+        ec.remove::<ActionState<T>>();
+        ec.remove::<InputMap<T>>();
+    }
 }
 
-pub fn in_player_state(
-    state: PlayerState,
-) -> impl FnMut(Query<&PlayerState, With<NetOwner>>) -> bool {
-    move |query: Query<&PlayerState, With<NetOwner>>| !query.is_empty() && *query.single() == state
+pub fn in_player_state(state: PlayerState) -> impl FnMut(Query<&PlayerState>) -> bool {
+    move |query: Query<&PlayerState>| !query.is_empty() && *query.single() == state
 }
 
 #[derive(Event)]
@@ -179,7 +184,7 @@ fn handle_build_state_input(
         &PlayerCursor,
         &ActionState<PlayerBuildAction>,
     )>,
-    mut previews: Query<&mut BuildingPreview, With<NetOwner>>,
+    mut previews: Query<&mut BuildingPreview>,
     mut c: Commands,
     mut ev_state: EventWriter<PlayerStateEvent>,
     mut cancel_mouse_pos: Local<Vec2>,

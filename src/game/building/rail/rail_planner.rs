@@ -62,8 +62,8 @@ pub enum RailPlannerStatus {
 
 fn create_rail_planner(
     mut c: Commands,
-    q: Query<Entity, (With<RailPlanner>, With<NetOwner>)>,
-    player_state: Query<(&PlayerCursor, &ActionState<PlayerBuildAction>), With<NetOwner>>,
+    q: Query<Entity, With<RailPlanner>>,
+    player_state: Query<(&PlayerCursor, &ActionState<PlayerBuildAction>)>,
     rail_states: Query<(Entity, &Rail)>,
     mut event: EventReader<PlayerStateEvent>,
 ) {
@@ -97,13 +97,13 @@ fn create_rail_planner(
             })
         });
 
-        c.spawn((plan, NetOwner));
+        c.spawn(plan);
     }
 }
 
 fn destroy_rail_planner(
     mut c: Commands,
-    q: Query<Entity, (With<RailPlanner>, With<NetOwner>)>,
+    q: Query<Entity, With<RailPlanner>>,
     mut event: EventReader<PlayerStateEvent>,
 ) {
     for e in event.read() {
@@ -115,10 +115,7 @@ fn destroy_rail_planner(
     }
 }
 
-fn preview_initial_rail_planner_placement(
-    mut gizmos: Gizmos,
-    cursor: Query<&PlayerCursor, With<NetOwner>>,
-) {
+fn preview_initial_rail_planner_placement(mut gizmos: Gizmos, cursor: Query<&PlayerCursor>) {
     let cursor = cursor.single();
 
     gizmos.cuboid(
@@ -132,7 +129,7 @@ fn update_rail_planner(
     mut c: Commands,
     mut q: Query<(&mut RailPlanner, &mut Text, &mut Node)>,
     mut rail_states: Query<(Entity, &mut Rail)>,
-    player_state: Query<(&PlayerCursor, &ActionState<PlayerBuildAction>), With<NetOwner>>,
+    player_state: Query<(&PlayerCursor, &ActionState<PlayerBuildAction>)>,
 ) {
     let (cursor, input) = player_state.single();
     let cursor_sphere = BoundingSphere::new(cursor.build_pos, 0.1);

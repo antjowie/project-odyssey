@@ -14,11 +14,11 @@ fn spawn_test_world(
 ) {
     // --- Gameplay
     // Player State
-    c.spawn((NetOwner, PlayerState::default()));
+    c.spawn((Name::new("PlayerState"), PlayerState::default()));
 
     // Camera
     c.spawn((
-        NetOwner,
+        Name::new("PanOrbitCamera"),
         PanOrbitCamera::default(),
         DistanceFog {
             color: Color::srgba(0.35, 0.48, 0.66, 1.0),
@@ -46,6 +46,7 @@ fn spawn_test_world(
     .build();
 
     c.spawn((
+        Name::new("DirectionalLight"),
         DirectionalLight {
             color: Color::srgb(0.98, 0.95, 0.82),
             shadows_enabled: true,
@@ -55,8 +56,8 @@ fn spawn_test_world(
         cascade_shadow_config,
     ));
 
-    // Sky, might wanna use a skybox later
     c.spawn((
+        Name::new("Skybox"),
         Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
         MeshMaterial3d(materials.add(StandardMaterial {
             base_color: Srgba::hex("888888").unwrap().into(),
@@ -68,8 +69,8 @@ fn spawn_test_world(
         NotShadowCaster,
     ));
 
-    // Terrain
     c.spawn((
+        Name::new("Terrain"),
         Mesh3d(meshes.add(Plane3d::new(Vec3::Y, Vec2::splat(100_000.0)))),
         MeshMaterial3d(materials.add(Color::WHITE)),
     ));
@@ -80,6 +81,7 @@ fn spawn_test_world(
     let material = materials.add(Color::BLACK);
     for i in 0..10 {
         c.spawn((
+            Name::new("Block"),
             Mesh3d(mesh.clone()),
             MeshMaterial3d(material.clone()),
             Transform::from_translation(Vec3::new(LEN * 2.0 * i as f32, LEN * 0.5, 0.0)),

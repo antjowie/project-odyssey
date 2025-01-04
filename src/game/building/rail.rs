@@ -201,7 +201,7 @@ pub fn debug_draw_rail_path(
     mut gizmos: Gizmos,
     q: Query<&Rail>,
     preview: Query<&RailPlanner>,
-    cursor: Query<&PlayerCursor, With<NetOwner>>,
+    cursor: Query<&PlayerCursor>,
 ) {
     let cursor = cursor.single();
     let cursor_sphere = BoundingSphere::new(cursor.build_pos, 0.1);

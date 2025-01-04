@@ -52,9 +52,6 @@ impl Plugin for GamePlugin {
     }
 }
 
-#[derive(Component)]
-pub struct NetOwner;
-
 #[derive(Default, Reflect, PartialEq)]
 pub enum PathRotationMode {
     #[default]
@@ -69,7 +66,7 @@ pub enum PathRotationMode {
 fn update_cursor(
     windows: Query<&Window, With<PrimaryWindow>>,
     cameras: Query<(&PanOrbitCamera, &Camera, &GlobalTransform)>,
-    mut q: Query<(&mut PlayerCursor, Option<&ActionState<PlayerBuildAction>>), With<NetOwner>>,
+    mut q: Query<(&mut PlayerCursor, Option<&ActionState<PlayerBuildAction>>)>,
     time: Res<Time>,
 ) {
     let window = windows.single();
@@ -145,7 +142,7 @@ fn draw_mesh_intersections(pointers: Query<&PointerInteraction>, mut gizmos: Giz
 }
 
 fn create_building_preview(
-    q: Query<Entity, (With<NetOwner>, With<BuildingPreview>)>,
+    q: Query<Entity, With<BuildingPreview>>,
     mut c: Commands,
     mut event: EventReader<PlayerStateEvent>,
 ) {
@@ -164,8 +161,8 @@ fn create_building_preview(
 }
 
 fn snap_building_preview_to_build_pos(
-    mut q: Query<&mut Transform, (With<NetOwner>, With<BuildingPreview>)>,
-    cursor: Query<&PlayerCursor, With<NetOwner>>,
+    mut q: Query<&mut Transform, With<BuildingPreview>>,
+    cursor: Query<&PlayerCursor>,
 ) {
     let cursor = cursor.single();
 
@@ -174,13 +171,13 @@ fn snap_building_preview_to_build_pos(
     });
 }
 
-fn validate_building_preview(mut q: Query<&mut BuildingPreview, With<NetOwner>>) {
+fn validate_building_preview(mut q: Query<&mut BuildingPreview>) {
     q.iter_mut().for_each(|mut preview| {
         preview.valid = !preview.valid;
     });
 }
 
-fn draw_build_grid(mut gizmos: Gizmos, q: Query<&PlayerCursor, With<NetOwner>>) {
+fn draw_build_grid(mut gizmos: Gizmos, q: Query<&PlayerCursor>) {
     let cursor = q.single();
 
     gizmos.grid(
