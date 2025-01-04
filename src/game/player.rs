@@ -5,6 +5,13 @@ pub(super) fn player_plugin(app: &mut App) {
     app.add_plugins(InputContextPlugin::<PlayerViewAction>::default());
     app.add_plugins(InputContextPlugin::<PlayerBuildAction>::default());
     app.add_event::<PlayerStateEvent>();
+    app.add_systems(
+        Update,
+        (
+            handle_view_state_input.run_if(any_with_component::<ActionState<PlayerViewAction>>),
+            handle_build_state_input.run_if(any_with_component::<ActionState<PlayerBuildAction>>),
+        ),
+    );
 }
 
 #[derive(
@@ -90,21 +97,33 @@ pub enum PlayerState {
 }
 
 impl PlayerState {
-    pub fn set(&mut self, new_state: PlayerState, c: &mut Commands, e: Entity) {
+    pub fn set(
+        &mut self,
+        new_state: PlayerState,
+        c: &mut Commands,
+        e: Entity,
+        ev_player_state: &mut EventWriter<PlayerStateEvent>,
+    ) {
+        if new_state == *self {
+            return;
+        }
+
+        ev_player_state.send(PlayerStateEvent {
+            old_state: self.clone(),
+            new_state: new_state.clone(),
+        });
+
+        let mut ec = c.entity(e);
         match self {
-            PlayerState::Viewing => c.entity(e).remove::<InputContext<PlayerViewAction>>(),
-            PlayerState::Building => c.entity(e).remove::<InputContext<PlayerBuildAction>>(),
+            PlayerState::Viewing => ec.remove::<InputContext<PlayerViewAction>>(),
+            PlayerState::Building => ec.remove::<InputContext<PlayerBuildAction>>(),
         };
 
         *self = new_state;
 
         match self {
-            PlayerState::Viewing => c
-                .entity(e)
-                .insert(InputContext::<PlayerViewAction>::default()),
-            PlayerState::Building => c
-                .entity(e)
-                .insert(InputContext::<PlayerBuildAction>::default()),
+            PlayerState::Viewing => ec.insert(InputContext::<PlayerViewAction>::default()),
+            PlayerState::Building => ec.insert(InputContext::<PlayerBuildAction>::default()),
         };
     }
 }
@@ -134,4 +153,53 @@ pub struct PlayerCursor {
     pub world_pos: Vec3,
     pub prev_world_pos: Vec3,
     pub world_grid_pos: Vec3,
+}
+
+fn handle_view_state_input(
+    mut q: Query<(Entity, &mut PlayerState, &ActionState<PlayerViewAction>)>,
+    mut c: Commands,
+    mut ev_state: EventWriter<PlayerStateEvent>,
+    mut ev_exit: EventWriter<AppExit>,
+) {
+    q.iter_mut().for_each(|(e, mut state, input)| {
+        if input.just_pressed(&PlayerViewAction::EnterBuildMode) {
+            state.set(PlayerState::Building, &mut c, e, &mut ev_state);
+        }
+
+        if input.just_pressed(&PlayerViewAction::ExitGame) {
+            ev_exit.send(AppExit::Success);
+        }
+    });
+}
+
+fn handle_build_state_input(
+    mut q: Query<(
+        Entity,
+        &mut PlayerState,
+        &PlayerCursor,
+        &ActionState<PlayerBuildAction>,
+    )>,
+    mut previews: Query<&mut BuildingPreview, With<NetOwner>>,
+    mut c: Commands,
+    mut ev_state: EventWriter<PlayerStateEvent>,
+    mut cancel_mouse_pos: Local<Vec2>,
+) {
+    q.iter_mut().for_each(|(e, mut state, cursor, input)| {
+        let wants_to_place = input.just_pressed(&PlayerBuildAction::Interact);
+        previews.iter_mut().for_each(|mut preview| {
+            preview.wants_to_place = wants_to_place;
+        });
+
+        if input.just_pressed(&PlayerBuildAction::Cancel) {
+            state.set(PlayerState::Viewing, &mut c, e, &mut ev_state);
+        }
+
+        if input.just_pressed(&PlayerBuildAction::CancelWithMouse) {
+            *cancel_mouse_pos = cursor.screen_pos.unwrap_or_default();
+        } else if input.just_released(&PlayerBuildAction::CancelWithMouse)
+            && *cancel_mouse_pos == cursor.screen_pos.unwrap_or_default()
+        {
+            state.set(PlayerState::Viewing, &mut c, e, &mut ev_state);
+        }
+    });
 }

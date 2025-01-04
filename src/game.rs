@@ -32,11 +32,13 @@ impl Plugin for GamePlugin {
         app.add_plugins(player_plugin);
         app.add_plugins(world_plugin);
 
-        app.add_systems(PreUpdate, update_cursor.after(InputManagerSystem::Update));
+        app.add_systems(
+            PreUpdate,
+            update_cursor.in_set(InputManagerSystem::ManualControl),
+        );
         app.add_systems(
             Update,
             (
-                process_state_change,
                 // draw_mesh_intersections,
                 draw_build_grid.run_if(in_player_state(PlayerState::Building)),
                 // snap_building_preview_to_build_pos,
@@ -129,68 +131,6 @@ fn update_cursor(
     } else {
         cursor.world_pos
     };
-}
-
-fn process_state_change(
-    mut c: Commands,
-    mut q: Query<
-        (
-            Entity,
-            &PlayerCursor,
-            &mut PlayerState,
-            Option<&ActionState<PlayerViewAction>>,
-            Option<&ActionState<PlayerBuildAction>>,
-        ),
-        With<NetOwner>,
-    >,
-    mut previews: Query<&mut BuildingPreview, With<NetOwner>>,
-    mut ev_player_state: EventWriter<PlayerStateEvent>,
-    mut exit: EventWriter<AppExit>,
-    mut cancel_mouse_pos: Local<Vec2>,
-) {
-    let (e, cursor, mut state, view_input, build_input) = q.single_mut();
-    let old_state = state.clone();
-
-    match *state {
-        PlayerState::Viewing => {
-            if let Some(input) = view_input {
-                if input.just_pressed(&PlayerViewAction::EnterBuildMode) {
-                    state.set(PlayerState::Building, &mut c, e);
-                }
-
-                if input.just_pressed(&PlayerViewAction::ExitGame) {
-                    exit.send(AppExit::Success);
-                }
-            }
-        }
-        PlayerState::Building => {
-            if let Some(input) = build_input {
-                let wants_to_place = input.just_pressed(&PlayerBuildAction::Interact);
-                previews.iter_mut().for_each(|mut preview| {
-                    preview.wants_to_place = wants_to_place;
-                });
-
-                if input.just_pressed(&PlayerBuildAction::Cancel) {
-                    state.set(PlayerState::Viewing, &mut c, e);
-                }
-
-                if input.just_pressed(&PlayerBuildAction::CancelWithMouse) {
-                    *cancel_mouse_pos = cursor.screen_pos.unwrap_or_default();
-                } else if input.just_released(&PlayerBuildAction::CancelWithMouse)
-                    && *cancel_mouse_pos == cursor.screen_pos.unwrap_or_default()
-                {
-                    state.set(PlayerState::Viewing, &mut c, e);
-                }
-            }
-        }
-    }
-
-    if *state != old_state {
-        ev_player_state.send(PlayerStateEvent {
-            old_state: old_state,
-            new_state: state.clone(),
-        });
-    }
 }
 
 fn draw_mesh_intersections(pointers: Query<&PointerInteraction>, mut gizmos: Gizmos) {
