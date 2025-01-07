@@ -82,6 +82,8 @@ pub use std::fmt;
 
 use std::{fmt::Write, marker::PhantomData};
 
+use crate::util::default_text_font;
+
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum InputSet {
     PurgeEntries,
@@ -349,10 +351,7 @@ fn spawn_input_display_ui(mut c: Commands) {
     c.spawn((
         InputDisplayUIMarker,
         Text::default(),
-        TextFont {
-            font_size: 15.,
-            ..Default::default()
-        },
+        default_text_font(),
         TextLayout::new_with_justify(JustifyText::Left),
         Node {
             position_type: PositionType::Absolute,

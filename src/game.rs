@@ -9,11 +9,13 @@
 use std::f32::consts::PI;
 
 use bevy::color::palettes::tailwind::*;
-use bevy::picking::pointer::PointerInteraction;
+use bevy::picking::pointer::{PointerInteraction, PressDirection};
 use bevy::{math::*, prelude::*, window::PrimaryWindow};
 
 use crate::camera::*;
 use crate::input::*;
+use crate::util::*;
+use building::rail::rail_planner::*;
 use building::*;
 use player::*;
 use world::*;
@@ -50,17 +52,6 @@ impl Plugin for GamePlugin {
         );
         app.register_type::<PlayerCursor>();
     }
-}
-
-#[derive(Default, Reflect, PartialEq)]
-pub enum PathRotationMode {
-    #[default]
-    // Keep aligned with start joint
-    Straight,
-    // Share same angle between start and end joint
-    Curve,
-    // Align end joint with direction between end and start point
-    Chase,
 }
 
 fn update_cursor(

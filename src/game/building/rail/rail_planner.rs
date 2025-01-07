@@ -11,6 +11,7 @@ pub fn rail_planner_plugin(app: &mut App) {
         (
             create_rail_planner,
             update_rail_planner,
+            update_rail_planner_status,
             draw_rail_planner,
             preview_initial_rail_planner_placement.run_if(not(any_with_component::<RailPlanner>)),
         )
@@ -19,7 +20,7 @@ pub fn rail_planner_plugin(app: &mut App) {
 }
 
 #[derive(Component)]
-#[require(Text, Node, BuildingPreview)]
+#[require(Text, BuildingPreview, TextFont(|| default_text_font()))]
 pub struct RailPlanner {
     pub start: Vec3,
     pub start_forward: Vec3,
@@ -54,6 +55,17 @@ pub enum RailPlannerStatus {
     // Our delta angle is too close to any other curves in our joint
     CurveTooShallow(f32),
     RailTooShort(f32),
+}
+
+#[derive(Default, Reflect, PartialEq, Debug, DisplayDebug)]
+pub enum PathRotationMode {
+    #[default]
+    // Keep aligned with start joint
+    Straight,
+    // Share same angle between start and end joint
+    Curve,
+    // Align end joint with direction between end and start point
+    Chase,
 }
 
 fn create_rail_planner(
@@ -109,14 +121,14 @@ fn preview_initial_rail_planner_placement(mut gizmos: Gizmos, cursor: Query<&Pla
 fn update_rail_planner(
     mut gizmos: Gizmos,
     mut c: Commands,
-    mut q: Query<(&mut RailPlanner, &mut Text, &mut Node)>,
+    mut q: Query<&mut RailPlanner>,
     mut rail_states: Query<(Entity, &mut Rail)>,
     player_state: Query<(&PlayerCursor, &ActionState<PlayerBuildAction>)>,
 ) {
     let (cursor, input) = player_state.single();
     let cursor_sphere = BoundingSphere::new(cursor.build_pos, 0.1);
 
-    q.iter_mut().for_each(|(mut plan, mut text, mut node)| {
+    q.iter_mut().for_each(|(mut plan)| {
         plan.end = cursor.build_pos;
         // Min length check
         if plan.end.distance_squared(plan.start) < 1.0 {
@@ -200,24 +212,6 @@ fn update_rail_planner(
             }
         };
 
-        text.0 = match plan.status {
-            RailPlannerStatus::Valid => "".into(),
-            RailPlannerStatus::CurveTooSharp(x) => {
-                format!("Curve Too Sharp {:.2}", x.to_degrees()).into()
-            }
-            RailPlannerStatus::CurveTooShallow(x) => {
-                format!("Curve Too Shallow {:.2}", x.to_degrees()).into()
-            }
-            RailPlannerStatus::RailTooShort(x) => {
-                format!("Rail Too Short {:.2} < {:2}", x, RAIL_MIN_LENGTH).into()
-            }
-        };
-
-        if let Some(pos) = cursor.screen_pos {
-            node.left = Val::Px(pos.x);
-            node.top = Val::Px(pos.y - 32.);
-        }
-
         // We have an intention to build
         if input.just_pressed(&PlayerBuildAction::Interact)
             && plan.status == RailPlannerStatus::Valid
@@ -234,6 +228,34 @@ fn update_rail_planner(
                 rail_entity: rail.id(),
                 joint_idx: RAIL_END_JOINT,
             });
+        }
+    });
+}
+
+fn update_rail_planner_status(
+    mut q: Query<(&RailPlanner, &mut Text, &mut Node)>,
+    cursor: Query<&PlayerCursor>,
+) {
+    let cursor = cursor.single();
+    q.iter_mut().for_each(|(plan, mut text, mut node)| {
+        text.0 = match plan.status {
+            RailPlannerStatus::Valid => "".into(),
+            RailPlannerStatus::CurveTooSharp(x) => {
+                format!("Curve Too Sharp {:.2}", x.to_degrees()).into()
+            }
+            RailPlannerStatus::CurveTooShallow(x) => {
+                format!("Curve Too Shallow {:.2}", x.to_degrees()).into()
+            }
+            RailPlannerStatus::RailTooShort(x) => {
+                format!("Rail Too Short {:.2} < {:2}", x, RAIL_MIN_LENGTH).into()
+            }
+        };
+
+        text.0 += format!("\nCurveMode {}", cursor.rotation_mode).as_str();
+
+        if let Some(pos) = cursor.screen_pos {
+            node.left = Val::Px(pos.x);
+            node.top = Val::Px(pos.y - 48.);
         }
     });
 }
