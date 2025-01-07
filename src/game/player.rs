@@ -116,8 +116,8 @@ impl PlayerState {
         let mut ec = c.entity(e);
 
         match self {
-            PlayerState::Viewing => PlayerState::remove::<PlayerViewAction>(&mut ec),
-            PlayerState::Building => PlayerState::remove::<PlayerBuildAction>(&mut ec),
+            PlayerState::Viewing => ec.remove::<InputContext<PlayerViewAction>>(),
+            PlayerState::Building => ec.remove::<InputContext<PlayerBuildAction>>(),
         };
 
         *self = new_state;
@@ -126,12 +126,6 @@ impl PlayerState {
             PlayerState::Viewing => ec.insert(InputContext::<PlayerViewAction>::default()),
             PlayerState::Building => ec.insert(InputContext::<PlayerBuildAction>::default()),
         };
-    }
-
-    fn remove<T: InputContextlike>(ec: &mut EntityCommands) {
-        ec.remove::<InputContext<T>>();
-        ec.remove::<ActionState<T>>();
-        ec.remove::<InputMap<T>>();
     }
 }
 

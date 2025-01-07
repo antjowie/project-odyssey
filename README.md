@@ -16,7 +16,7 @@ Rail editor
 - [ ] Add copy pasta? 
 
 Input
-- [ ] Use context based input components (this can control state)
+- [x] Use context based input components (this can control state)
 - [x] Write context based input components to screen
 
 Pathfinding

@@ -8,6 +8,11 @@ pub mod rail;
 pub(super) fn build_plugin(app: &mut App) {
     app.add_systems(Startup, load_assets);
     app.add_plugins(rail_plugin);
+
+    app.add_systems(
+        Update,
+        cleanup_build_preview_on_state_change.run_if(on_event::<PlayerStateEvent>),
+    );
     // app.add_systems(
     //     Update,
     //     (
@@ -55,6 +60,22 @@ pub struct BuildingPreview {
     orig_material: MeshMaterial3d<StandardMaterial>,
     pub valid: bool,
     pub wants_to_place: bool,
+}
+
+fn cleanup_build_preview_on_state_change(
+    mut c: Commands,
+    q: Query<Entity, With<BuildingPreview>>,
+    mut event: EventReader<PlayerStateEvent>,
+) {
+    {
+        for e in event.read() {
+            if e.new_state == PlayerState::Viewing && e.old_state == PlayerState::Building {
+                q.into_iter().for_each(|e| {
+                    c.entity(e).despawn();
+                });
+            }
+        }
+    }
 }
 
 fn on_add_build_preview_component(

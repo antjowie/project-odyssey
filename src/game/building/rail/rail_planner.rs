@@ -9,21 +9,17 @@ pub fn rail_planner_plugin(app: &mut App) {
     app.add_systems(
         Update,
         (
-            (
-                create_rail_planner,
-                update_rail_planner,
-                draw_rail_planner,
-                preview_initial_rail_planner_placement
-                    .run_if(not(any_with_component::<RailPlanner>)),
-            )
-                .run_if(any_with_component::<InputContext<PlayerBuildAction>>),
-            destroy_rail_planner,
-        ),
+            create_rail_planner,
+            update_rail_planner,
+            draw_rail_planner,
+            preview_initial_rail_planner_placement.run_if(not(any_with_component::<RailPlanner>)),
+        )
+            .run_if(any_with_component::<InputContext<PlayerBuildAction>>),
     );
 }
 
 #[derive(Component)]
-#[require(Text, Node)]
+#[require(Text, Node, BuildingPreview)]
 pub struct RailPlanner {
     pub start: Vec3,
     pub start_forward: Vec3,
@@ -98,20 +94,6 @@ fn create_rail_planner(
         });
 
         c.spawn(plan);
-    }
-}
-
-fn destroy_rail_planner(
-    mut c: Commands,
-    q: Query<Entity, With<RailPlanner>>,
-    mut event: EventReader<PlayerStateEvent>,
-) {
-    for e in event.read() {
-        if e.new_state == PlayerState::Viewing && e.old_state == PlayerState::Building {
-            q.into_iter().for_each(|e| {
-                c.entity(e).despawn();
-            });
-        }
     }
 }
 

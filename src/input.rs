@@ -107,6 +107,16 @@ impl<A: InputContextlike> Default for InputContext<A> {
     }
 }
 
+/// We need to enable this with a one frame delay, event seems like the simplest
+/// method although a defer method would be preferable. Command could facilitate
+/// this but events are a bit simpler to use, even though there is additional
+/// boilerplate that goes along with it
+#[derive(Event)]
+struct EnableInputContextEvent<A: InputContextlike> {
+    entity: Entity,
+    _phantom: PhantomData<A>,
+}
+
 /// Implement this trait for any InputContext
 pub trait InputContextlike: Actionlike + std::fmt::Display + Ord + Clone {
     fn default_input_map() -> InputMap<Self>;
@@ -136,11 +146,16 @@ impl<A: InputContextlike + TypePath + bevy::reflect::GetTypeRegistration> Plugin
         }
 
         app.add_plugins(InputManagerPlugin::<A>::default());
+        app.add_event::<EnableInputContextEvent<A>>();
         app.add_systems(
-            Update,
+            PreUpdate,
             (
                 (
-                    input_context_created::<A>.run_if(run_once),
+                    handle_enable_input_context_event::<A>
+                        .before(input_context_added::<A>)
+                        .run_if(on_event::<EnableInputContextEvent<A>>),
+                    input_context_added::<A>
+                        .run_if(condition_changed(any_with_component::<InputContext<A>>)),
                     input_context_removed::<A>.run_if(any_component_removed::<InputContext<A>>),
                 )
                     .in_set(InputSet::PurgeEntries),
@@ -158,15 +173,17 @@ impl Plugin for InputSetupPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<AllInputContextEntries>();
         app.configure_sets(
-            Update,
+            PreUpdate,
             (
-                InputSet::PurgeEntries.before(InputSet::CollectEntries),
+                InputSet::PurgeEntries
+                    .before(InputSet::CollectEntries)
+                    .after(InputManagerSystem::ManualControl),
                 InputSet::CollectEntries.before(InputSet::EntriesCollected),
             ),
         );
         app.add_systems(Startup, spawn_input_display_ui);
         app.add_systems(
-            Update,
+            PreUpdate,
             update_input_display_text
                 .run_if(resource_changed::<AllInputContextEntries>)
                 .in_set(InputSet::EntriesCollected),
@@ -217,7 +234,7 @@ impl InputContextEntries {
                             .into_iter()
                             .filter(|x| x.kind() == InputControlKind::Button)
                             .map(|x: Box<dyn Buttonlike>| -> String {
-                                info!("Processing composite input {:?}", x);
+                                // info!("Processing composite input {:?}", x);
                                 let dbg = x.clone();
                                 let any = x.into_any();
                                 if let Some(_keycode) = any.downcast_ref::<KeyCode>() {
@@ -259,7 +276,7 @@ impl InputContextEntries {
                         let mut seen = HashSet::new();
                         let mut text = String::new();
                         for item in vec {
-                            info!("Processing chord input {:?}", item);
+                            // info!("Processing chord input {:?}", item);
                             let item = get_key(item);
                             if seen.insert(item.clone()) {
                                 if !text.is_empty() {
@@ -347,24 +364,55 @@ fn spawn_input_display_ui(mut c: Commands) {
     ));
 }
 
-fn input_context_created<A>(mut data: ResMut<AllInputContextEntries>) {
-    *data = AllInputContextEntries::default();
-}
-
-fn input_context_removed<A>(mut data: ResMut<AllInputContextEntries>) {
-    *data = AllInputContextEntries::default();
-}
-
-fn collect_input_context_entries<A>(
+fn handle_enable_input_context_event<A: InputContextlike>(
+    mut q: Query<&mut ActionState<A>>,
     mut data: ResMut<AllInputContextEntries>,
-    q: Query<(&InputContext<A>, &InputMap<A>)>,
-) where
-    A: InputContextlike,
-{
-    q.iter().for_each(|(input_actions, input_map)| {
-        data.bypass_change_detection()
-            .entries
-            .push(InputContextEntries::new(input_actions, input_map))
+    mut ev_enable: EventReader<EnableInputContextEvent<A>>,
+) {
+    ev_enable.read().for_each(|ev| {
+        if let Ok(mut input) = q.get_mut(ev.entity) {
+            input.enable();
+            *data = AllInputContextEntries::default();
+
+            // info!("Added {}", A::group_name());
+        }
+    });
+}
+
+fn input_context_added<A: InputContextlike>(
+    q: Query<Entity, Added<InputContext<A>>>,
+    mut ev_enable: EventWriter<EnableInputContextEvent<A>>,
+) {
+    q.iter().for_each(|entity| {
+        ev_enable.send(EnableInputContextEvent {
+            entity,
+            _phantom: PhantomData::<A>,
+        });
+    });
+}
+
+fn input_context_removed<A: InputContextlike>(
+    mut q: Query<&mut ActionState<A>>,
+    mut data: ResMut<AllInputContextEntries>,
+) {
+    q.iter_mut().for_each(|mut input| {
+        input.disable();
+        // info!("Removed {}", A::group_name());
+    });
+    *data = AllInputContextEntries::default();
+}
+
+fn collect_input_context_entries<A: InputContextlike>(
+    mut data: ResMut<AllInputContextEntries>,
+    q: Query<(&InputContext<A>, &InputMap<A>, &ActionState<A>)>,
+) {
+    q.iter().for_each(|(input_actions, input_map, state)| {
+        if !state.disabled() {
+            // info!("Collecting {}", A::group_name());
+            data.bypass_change_detection()
+                .entries
+                .push(InputContextEntries::new(input_actions, input_map))
+        }
     });
 }
 
@@ -372,10 +420,10 @@ fn update_input_display_text(
     data: Res<AllInputContextEntries>,
     mut q: Query<&mut Text, With<InputDisplayUIMarker>>,
 ) {
-    info!(
-        "-- Updating input display data... ({}) entries",
-        data.entries.len()
-    );
+    // info!(
+    //     "-- Updating input display data... ({}) entries",
+    //     data.entries.len()
+    // );
     if q.is_empty() {
         return;
     }
@@ -393,5 +441,5 @@ fn update_input_display_text(
                 .unwrap()
         });
     });
-    info!("-- Updating input display data DONE");
+    // info!("-- Updating input display data DONE");
 }
