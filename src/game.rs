@@ -15,7 +15,6 @@ use bevy::{math::*, prelude::*, window::PrimaryWindow};
 use crate::camera::*;
 use crate::input::*;
 use crate::util::*;
-use building::rail::rail_planner::*;
 use building::*;
 use player::*;
 use world::*;
@@ -104,11 +103,11 @@ fn update_cursor(
                 (cursor.manual_rotation / SNAP_ROT).round() * SNAP_ROT + SNAP_ROT;
         }
 
-        if input.just_pressed(&PlayerBuildAction::CyclePathRotateMode) {
-            cursor.rotation_mode = match cursor.rotation_mode {
-                PathRotationMode::Straight => PathRotationMode::Curve,
-                PathRotationMode::Curve => PathRotationMode::Chase,
-                PathRotationMode::Chase => PathRotationMode::Straight,
+        if input.just_pressed(&PlayerBuildAction::CycleCurveMode) {
+            cursor.curve_mode = match cursor.curve_mode {
+                PathCurveMode::Straight => PathCurveMode::Curve,
+                PathCurveMode::Curve => PathCurveMode::Chase,
+                PathCurveMode::Chase => PathCurveMode::Straight,
             };
             cursor.manual_rotation = 0.;
         }

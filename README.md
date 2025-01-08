@@ -6,9 +6,11 @@ A train simulator "game"?
 ### Todo
 
 Rail editor
+- [x] Rail planner placement iteration
 - [ ] Setup rail planner validations
-- [ ] Setup basic UI, mostly for feedback
 - [ ] Add vertical rail building
+  - [ ] Add proper collision volume gen
+  - [ ] Add proper raycasting
 - [ ] Add segment deconstruction
 - [ ] Improve joint expansion
   - [ ] There are 2 joints, when extending treat them as one and rotation will set left or right

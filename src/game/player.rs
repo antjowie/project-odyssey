@@ -8,6 +8,7 @@ pub(super) fn player_plugin(app: &mut App) {
     app.add_systems(
         Update,
         (
+            setup_player_state.run_if(any_with_component::<PlayerState>),
             handle_view_state_input.run_if(any_with_component::<ActionState<PlayerViewAction>>),
             handle_build_state_input.run_if(any_with_component::<ActionState<PlayerBuildAction>>),
         ),
@@ -34,7 +35,9 @@ impl InputContextlike for PlayerViewAction {
     }
 }
 
-#[derive(Actionlike, PartialEq, Eq, Hash, Clone, Copy, Debug, Reflect, PartialOrd, Ord)]
+#[derive(
+    Actionlike, PartialEq, Eq, Hash, Clone, Copy, Debug, Reflect, PartialOrd, Ord, DisplayDebug,
+)]
 pub enum PlayerBuildAction {
     Interact,
     Cancel,
@@ -43,7 +46,7 @@ pub enum PlayerBuildAction {
     CounterRotate,
     SnapRotate,
     SnapCounterRotate,
-    CyclePathRotateMode,
+    CycleCurveMode,
     ToggleSnapToGrid,
 }
 
@@ -70,21 +73,11 @@ impl InputContextlike for PlayerBuildAction {
                     .with(ModifierKey::Shift)
                     .with(KeyCode::KeyR),
             )
-            .with(PlayerBuildAction::CyclePathRotateMode, KeyCode::Tab)
+            .with(PlayerBuildAction::CycleCurveMode, KeyCode::Tab)
             .with(PlayerBuildAction::ToggleSnapToGrid, KeyCode::ControlLeft)
     }
     fn group_name() -> String {
         "Build Actions".into()
-    }
-}
-
-impl fmt::Display for PlayerBuildAction {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self == &PlayerBuildAction::CyclePathRotateMode {
-            write!(f, "{:?} Straight/Curve/Chase", self)
-        } else {
-            fmt::Debug::fmt(&self, f)
-        }
     }
 }
 
@@ -129,6 +122,12 @@ impl PlayerState {
     }
 }
 
+fn setup_player_state(mut c: Commands, q: Query<Entity, Added<PlayerState>>) {
+    q.iter().for_each(|e| {
+        c.entity(e).observe(handle_build_state_cancel_event);
+    });
+}
+
 pub fn in_player_state(state: PlayerState) -> impl FnMut(Query<&PlayerState>) -> bool {
     move |query: Query<&PlayerState>| !query.is_empty() && *query.single() == state
 }
@@ -139,6 +138,14 @@ pub struct PlayerStateEvent {
     pub old_state: PlayerState,
 }
 
+#[derive(Component)]
+pub struct BuildStateCancelEvent;
+
+impl Event for BuildStateCancelEvent {
+    type Traversal = &'static BuildingPreview;
+    const AUTO_PROPAGATE: bool = true;
+}
+
 /// Component that tracks the cursor position
 #[derive(Component, Default, Reflect)]
 pub struct PlayerCursor {
@@ -146,12 +153,23 @@ pub struct PlayerCursor {
     pub should_snap_to_grid: bool,
     // Cached build rotation
     pub manual_rotation: f32,
-    pub rotation_mode: PathRotationMode,
+    pub curve_mode: PathCurveMode,
     // Can be world or grid pos based on user desire
     pub build_pos: Vec3,
     pub world_pos: Vec3,
     pub prev_world_pos: Vec3,
     pub world_grid_pos: Vec3,
+}
+
+#[derive(Default, Reflect, PartialEq, Debug, DisplayDebug)]
+pub enum PathCurveMode {
+    #[default]
+    // Keep aligned with start joint
+    Straight,
+    // Share same angle between start and end joint
+    Curve,
+    // Align end joint with direction between end and start point
+    Chase,
 }
 
 fn handle_view_state_input(
@@ -172,25 +190,15 @@ fn handle_view_state_input(
 }
 
 fn handle_build_state_input(
-    mut q: Query<(
-        Entity,
-        &mut PlayerState,
-        &PlayerCursor,
-        &ActionState<PlayerBuildAction>,
-    )>,
-    mut previews: Query<&mut BuildingPreview>,
     mut c: Commands,
-    mut ev_state: EventWriter<PlayerStateEvent>,
+    q: Query<(Entity, &PlayerCursor, &ActionState<PlayerBuildAction>)>,
+    previews: Query<Entity, With<BuildingPreview>>,
     mut cancel_mouse_pos: Local<Vec2>,
 ) {
-    q.iter_mut().for_each(|(e, mut state, cursor, input)| {
-        let wants_to_place = input.just_pressed(&PlayerBuildAction::Interact);
-        previews.iter_mut().for_each(|mut preview| {
-            preview.wants_to_place = wants_to_place;
-        });
-
+    let mut trigger = false;
+    q.iter().for_each(|(_, cursor, input)| {
         if input.just_pressed(&PlayerBuildAction::Cancel) {
-            state.set(PlayerState::Viewing, &mut c, e, &mut ev_state);
+            trigger = true;
         }
 
         if input.just_pressed(&PlayerBuildAction::CancelWithMouse) {
@@ -198,7 +206,30 @@ fn handle_build_state_input(
         } else if input.just_released(&PlayerBuildAction::CancelWithMouse)
             && *cancel_mouse_pos == cursor.screen_pos.unwrap_or_default()
         {
-            state.set(PlayerState::Viewing, &mut c, e, &mut ev_state);
+            trigger = true;
         }
     });
+
+    if trigger {
+        if !previews.is_empty() {
+            previews
+                .iter()
+                .for_each(|e| c.trigger_targets(BuildStateCancelEvent, e));
+        } else {
+            q.iter()
+                .for_each(|(e, _, _)| c.trigger_targets(BuildStateCancelEvent, e));
+        }
+    }
+}
+
+/// Event propogated from BuildPreview
+fn handle_build_state_cancel_event(
+    trigger: Trigger<BuildStateCancelEvent>,
+    mut q: Query<&mut PlayerState>,
+    mut ev_state: EventWriter<PlayerStateEvent>,
+    mut c: Commands,
+) {
+    let e = trigger.entity();
+    let mut state = q.get_mut(e).unwrap();
+    state.set(PlayerState::Viewing, &mut c, e, &mut ev_state);
 }

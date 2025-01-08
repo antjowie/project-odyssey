@@ -1,6 +1,8 @@
 //! Any buildings that can be built and placed
+use std::default;
+
 use super::*;
-use bevy::pbr::NotShadowCaster;
+use bevy::{ecs::traversal::Traversal, pbr::NotShadowCaster};
 
 use rail::*;
 pub mod rail;
@@ -55,11 +57,27 @@ fn load_assets(
 #[derive(Component, Default)]
 pub struct Building;
 
-#[derive(Component, Default)]
+#[derive(Component)]
 pub struct BuildingPreview {
+    state_instigator: Entity,
     orig_material: MeshMaterial3d<StandardMaterial>,
     pub valid: bool,
-    pub wants_to_place: bool,
+}
+
+impl BuildingPreview {
+    fn new(state_instigator: Entity) -> BuildingPreview {
+        BuildingPreview {
+            state_instigator,
+            orig_material: MeshMaterial3d::<StandardMaterial>::default(),
+            valid: false,
+        }
+    }
+}
+
+impl Traversal for &BuildingPreview {
+    fn traverse(item: Self::Item<'_>) -> Option<Entity> {
+        Some(item.state_instigator)
+    }
 }
 
 fn cleanup_build_preview_on_state_change(
