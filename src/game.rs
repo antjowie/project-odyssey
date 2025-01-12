@@ -104,11 +104,7 @@ fn update_cursor(
         }
 
         if input.just_pressed(&PlayerBuildAction::CycleCurveMode) {
-            cursor.curve_mode = match cursor.curve_mode {
-                PathCurveMode::Straight => PathCurveMode::Curve,
-                PathCurveMode::Curve => PathCurveMode::Chase,
-                PathCurveMode::Chase => PathCurveMode::Straight,
-            };
+            cursor.curve_mode = cursor.curve_mode.next();
             cursor.manual_rotation = 0.;
         }
     }

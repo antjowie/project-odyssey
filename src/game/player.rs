@@ -163,13 +163,23 @@ pub struct PlayerCursor {
 
 #[derive(Default, Reflect, PartialEq, Debug, DisplayDebug)]
 pub enum PathCurveMode {
+    // Share same angle between start and end joint
     #[default]
+    Curve,
     // Keep aligned with start joint
     Straight,
-    // Share same angle between start and end joint
-    Curve,
     // Align end joint with direction between end and start point
     Chase,
+}
+
+impl PathCurveMode {
+    pub fn next(&self) -> Self {
+        match self {
+            PathCurveMode::Curve => PathCurveMode::Straight,
+            PathCurveMode::Straight => PathCurveMode::Chase,
+            PathCurveMode::Chase => PathCurveMode::Curve,
+        }
+    }
 }
 
 fn handle_view_state_input(

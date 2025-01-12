@@ -201,6 +201,17 @@ pub struct AllInputContextEntries {
     pub entries: Vec<InputContextEntries>,
 }
 
+impl AllInputContextEntries {
+    pub fn get_input_entry<A: InputContextlike>(&self, action: &A) -> Option<&InputContextEntry> {
+        self.entries.iter().find_map(|group| {
+            group
+                .entries
+                .iter()
+                .find(|entry| entry.action == format!("{action}"))
+        })
+    }
+}
+
 pub struct InputContextEntries {
     pub name: String,
     /// Entries are ordered according to InputConfig Ord impl

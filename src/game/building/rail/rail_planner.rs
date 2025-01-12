@@ -255,6 +255,7 @@ fn update_rail_planner(
 fn update_rail_planner_status(
     mut q: Query<(&RailPlanner, &mut Text, &mut Node)>,
     cursor: Query<&PlayerCursor>,
+    input_entries: Res<AllInputContextEntries>,
 ) {
     let cursor = cursor.single();
     q.iter_mut().for_each(|(plan, mut text, mut node)| {
@@ -274,7 +275,14 @@ fn update_rail_planner_status(
                 }
             };
 
-            text.0 += format!("\nCurveMode {}", cursor.curve_mode).as_str();
+            let input = input_entries.get_input_entry(&PlayerBuildAction::CycleCurveMode);
+            let input = if input.is_some() {
+                &input.unwrap().input
+            } else {
+                ""
+            };
+
+            text.0 += format!("\n<{}> CurveMode {}", input, cursor.curve_mode).as_str();
         }
 
         if let Some(pos) = cursor.screen_pos {
