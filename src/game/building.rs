@@ -50,8 +50,6 @@ fn load_assets(
             ..default()
         }),
     });
-
-    c.insert_resource(create_rail_asset(meshes, materials));
 }
 
 #[derive(Component, Default)]

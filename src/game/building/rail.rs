@@ -1,5 +1,8 @@
 use super::*;
-use bevy::math::bounding::{BoundingSphere, BoundingVolume, IntersectsVolume};
+use bevy::{
+    math::bounding::{BoundingSphere, IntersectsVolume},
+    utils::HashMap,
+};
 
 use rail_planner::*;
 
@@ -13,26 +16,10 @@ pub(super) fn rail_plugin(app: &mut App) {
         rail_planner::rail_planner_plugin,
     ));
     app.add_systems(Update, debug_draw_rail_path);
-}
-
-#[derive(Resource)]
-pub struct RailAsset {
-    mesh: Handle<Mesh>,
-    material: Handle<StandardMaterial>,
-}
-
-pub fn create_rail_asset(
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) -> RailAsset {
-    RailAsset {
-        mesh: meshes.add(Cuboid::from_length(2.0)),
-        material: materials.add(Color::BLACK),
-    }
+    app.init_resource::<RailIntersections>();
 }
 
 // Start joint is the initial joint that is placed. You can als think of it as head and tail
-//
 const RAIL_START_JOINT: usize = 0;
 const RAIL_END_JOINT: usize = 1;
 const RAIL_JOINTS_MAX: usize = 2;
@@ -45,67 +32,126 @@ const RAIL_CURVES_MAX: usize = (RAIL_MAX_RADIANS / RAIL_MIN_RADIANS) as usize + 
 /// Contains the details to build and connect a rail
 #[derive(Component)]
 pub struct Rail {
-    pub joints: [RailPathJoint; RAIL_JOINTS_MAX],
+    pub joints: [RailJoint; RAIL_JOINTS_MAX],
 }
 
 impl Rail {
-    fn new(self_entity: Entity, q: &mut Query<&mut Rail>, plan: &RailPlanner) -> Rail {
+    fn new(
+        self_entity: Entity,
+        intersections: &mut ResMut<RailIntersections>,
+        plan: &RailPlanner,
+    ) -> Rail {
         let start = plan.start;
         let end = plan.end;
         let dir = (end - start).normalize();
-        let size = ((end - start).length()).min(2.5);
+        let size = 2.5;
 
-        let mut self_state = Rail {
+        // Create the intersections
+        let mut create_new_intersection = |right_forward: Vec3| -> u32 {
+            let idx = intersections.get_available_index();
+            intersections.intersections.insert(
+                idx,
+                RailIntersection {
+                    right_forward,
+                    ..default()
+                },
+            );
+            idx
+        };
+
+        let start_intersection_id = plan
+            .start_intersection_id
+            .unwrap_or_else(|| create_new_intersection(dir));
+        let end_intersection_id = plan
+            .end_intersection_id
+            .unwrap_or_else(|| create_new_intersection(dir));
+
+        let self_state = Rail {
             joints: [
-                RailPathJoint {
+                RailJoint {
                     pos: start,
                     forward: plan.start_forward,
                     collision: BoundingSphere::new(start + dir * size, size),
-                    n_joints: [None; 3],
+                    intersection_id: start_intersection_id,
                 },
-                RailPathJoint {
+                RailJoint {
                     pos: end,
                     forward: plan.end_forward,
                     collision: BoundingSphere::new(end - dir * size, size),
-                    n_joints: [None; 3],
+                    intersection_id: end_intersection_id,
                 },
             ],
         };
 
-        let mut connect_joints = |other_joint_ref: RailPathJointRef| {
-            let mut other_state = q.get_mut(other_joint_ref.rail_entity).unwrap();
-            let self_joint_idx = if other_state.joints[other_joint_ref.joint_idx].pos
-                == self_state.joints[RAIL_START_JOINT].pos
-            {
-                RAIL_START_JOINT
-            } else {
-                RAIL_END_JOINT
+        let connect_intersection =
+            |entity: Entity, forward: &Vec3, intersection: &mut RailIntersection| {
+                let side = if intersection.right_forward.dot(*forward) > 0. {
+                    &mut intersection.right
+                } else {
+                    &mut intersection.left
+                };
+
+                side[RailIntersection::get_empty_idx(side).unwrap()] = Some(entity);
             };
 
-            let self_joint_ref = RailPathJointRef {
-                rail_entity: self_entity,
-                joint_idx: self_joint_idx,
-            };
+        let mut start_intersection = intersections
+            .intersections
+            .get_mut(&start_intersection_id)
+            .unwrap();
 
-            connect_rail_joints(
-                &mut self_state,
-                self_joint_ref,
-                &mut other_state,
-                other_joint_ref,
-            );
-        };
+        connect_intersection(self_entity, &-plan.start_forward, &mut start_intersection);
 
-        // Check if we expanded from a joint
-        if let Some(start_joint_ref) = plan.start_joint {
-            connect_joints(start_joint_ref);
-        }
-
-        // Check if we clicked on a joint for end pos
-        if let Some(end_joint_ref) = plan.end_joint {
-            connect_joints(end_joint_ref);
-        }
+        let mut end_intersection = intersections
+            .intersections
+            .get_mut(&end_intersection_id)
+            .unwrap();
+        connect_intersection(self_entity, &-plan.end_forward, &mut end_intersection);
 
         self_state
+    }
+}
+
+/// RailJoint represents the end points of a rail, used to construct a curve
+pub struct RailJoint {
+    pub pos: Vec3,
+    /// Vector that represents the direction this joint goes towards (if we were to expand)
+    pub forward: Vec3,
+    pub collision: BoundingSphere,
+    pub intersection_id: u32,
+}
+
+#[derive(Resource, Default)]
+pub struct RailIntersections {
+    pub intersections: HashMap<u32, RailIntersection>,
+    next_index: u32,
+    available_indexes: Vec<u32>,
+}
+
+impl RailIntersections {
+    fn get_available_index(&mut self) -> u32 {
+        if self.available_indexes.len() > 0 {
+            return self.available_indexes.pop().unwrap();
+        }
+        self.next_index += 1;
+        return self.next_index;
+    }
+}
+
+#[derive(Default, Debug)]
+pub struct RailIntersection {
+    pub left: [Option<Entity>; RAIL_CURVES_MAX],
+    pub right: [Option<Entity>; RAIL_CURVES_MAX],
+    /// The right direction, required to know where to store a Rail
+    pub right_forward: Vec3,
+}
+
+impl RailIntersection {
+    fn get_empty_idx(intersections: &[Option<Entity>; RAIL_CURVES_MAX]) -> Option<usize> {
+        intersections
+            .iter()
+            .enumerate()
+            .find(|(_, v)| v.is_none())
+            .and_then(|(i, _)| Some(i))
     }
 }
 
@@ -139,49 +185,7 @@ pub fn create_curve_points(points: [[Vec3; 4]; 1]) -> Vec<Vec3> {
         .collect()
 }
 
-pub struct RailPathJoint {
-    pub pos: Vec3,
-    // Vector that represents the direction this joint goes towards. Used when we extend from this joint
-    pub forward: Vec3,
-    pub collision: BoundingSphere,
-    // Neighbor joints
-    pub n_joints: [Option<RailPathJointRef>; RAIL_CURVES_MAX],
-}
-
-impl RailPathJoint {
-    fn get_empty_curve_idx(&self) -> Option<usize> {
-        info!("{:?}", self.n_joints);
-
-        self.n_joints
-            .iter()
-            .enumerate()
-            .find(|(_, c)| c.is_none())
-            .and_then(|(i, _)| Some(i))
-    }
-}
-
-fn connect_rail_joints(
-    left_state: &mut Rail,
-    left_joint_ref: RailPathJointRef,
-    right_state: &mut Rail,
-    right_joint_ref: RailPathJointRef,
-) {
-    // No spot left in the joint curves
-    let left_joint = &mut left_state.joints[left_joint_ref.joint_idx];
-    left_joint.n_joints[left_joint.get_empty_curve_idx().unwrap()] = Some(right_joint_ref);
-
-    let right_joint = &mut right_state.joints[right_joint_ref.joint_idx];
-    right_joint.n_joints[right_joint.get_empty_curve_idx().unwrap()] = Some(left_joint_ref);
-}
-
-// We store target_joint info in a specific struct since we can't reference other RailPathJoint
-#[derive(Copy, Clone, Debug)]
-pub struct RailPathJointRef {
-    pub rail_entity: Entity,
-    pub joint_idx: usize,
-}
-
-fn get_joint_collision(rail_path: &Rail, sphere: BoundingSphere) -> Option<&RailPathJoint> {
+fn get_joint_collision(rail_path: &Rail, sphere: BoundingSphere) -> Option<&RailJoint> {
     if rail_path.joints[RAIL_START_JOINT]
         .collision
         .intersects(&sphere)
@@ -234,7 +238,7 @@ pub fn debug_draw_rail_path(
 
         let collision = get_joint_collision(state, cursor_sphere);
 
-        let mut draw_joint = |joint: &RailPathJoint| {
+        let mut draw_joint = |joint: &RailJoint| {
             // Draw collision
             let collides_joint = collision.is_some_and(|x| x.pos == joint.pos);
 
@@ -260,23 +264,23 @@ pub fn debug_draw_rail_path(
             }
 
             // Draw neighbors
-            for neighbor in joint.n_joints {
-                if let Some(neighbor) = neighbor {
-                    // If update_rail_planner runs parallel to this system, the entity is already created but
-                    // the component is not yet created. We could also chain this system after update_rail_planner
-                    // but I think it's faster to guard against none values
-                    if let Ok(target_joint) = q.get(neighbor.rail_entity) {
-                        gizmos.line(
-                            joint.collision.center().into(),
-                            target_joint.joints[neighbor.joint_idx]
-                                .collision
-                                .center()
-                                .into(),
-                            Color::srgb(0.1, 1.0, 0.1),
-                        );
-                    }
-                }
-            }
+            // for neighbor in joint.n_joints {
+            //     if let Some(neighbor) = neighbor {
+            //         // If update_rail_planner runs parallel to this system, the entity is already created but
+            //         // the component is not yet created. We could also chain this system after update_rail_planner
+            //         // but I think it's faster to guard against none values
+            //         if let Ok(target_joint) = q.get(neighbor.rail_entity) {
+            //             gizmos.line(
+            //                 joint.collision.center().into(),
+            //                 target_joint.joints[neighbor.joint_idx]
+            //                     .collision
+            //                     .center()
+            //                     .into(),
+            //                 Color::srgb(0.1, 1.0, 0.1),
+            //             );
+            //         }
+            //     }
+            // }
         };
         draw_joint(&state.joints[RAIL_START_JOINT]);
         draw_joint(&state.joints[RAIL_END_JOINT]);

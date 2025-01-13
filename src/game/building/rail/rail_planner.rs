@@ -1,6 +1,7 @@
 use std::f32::consts::FRAC_PI_2;
 
 use bevy::math::vec3;
+use bevy_egui::{egui, EguiContexts};
 
 /// Logic responsible for generating a preview of what RailBuilding will be built
 use super::*;
@@ -14,6 +15,7 @@ pub fn rail_planner_plugin(app: &mut App) {
             update_rail_planner_status,
             draw_rail_planner,
             preview_initial_rail_planner_placement.run_if(not(any_with_component::<RailPlanner>)),
+            debug_intersections,
         )
             .run_if(any_with_component::<InputContext<PlayerBuildAction>>),
     );
@@ -24,16 +26,14 @@ pub fn rail_planner_plugin(app: &mut App) {
 pub struct RailPlanner {
     pub start: Vec3,
     pub start_forward: Vec3,
+    pub start_intersection_id: Option<u32>,
     /// Initial placement is used together with the presence of a start joint
     /// If we have no initial placement, we want the first placement to confirm
     /// the start_forward orientation
-    pub start_forward_specified: bool,
+    pub is_initial_placement: bool,
     pub end: Vec3,
     pub end_forward: Vec3,
-    /// Joint we expand from
-    pub start_joint: Option<RailPathJointRef>,
-    /// Joint we end with, and want to connect to
-    pub end_joint: Option<RailPathJointRef>,
+    pub end_intersection_id: Option<u32>,
     pub status: RailPlannerStatus,
 }
 
@@ -42,17 +42,13 @@ impl RailPlanner {
         RailPlanner {
             start: start_pos,
             start_forward: start_pos.normalize_or(Vec3::X),
-            start_forward_specified: false,
+            start_intersection_id: None,
+            is_initial_placement: true,
             end: start_pos,
             end_forward: start_pos.normalize_or(Vec3::X),
-            start_joint: None,
-            end_joint: None,
+            end_intersection_id: None,
             status: RailPlannerStatus::Valid,
         }
-    }
-
-    fn is_initial_placement(&self) -> bool {
-        self.start_joint.is_none() && !self.start_forward_specified
     }
 }
 
@@ -76,8 +72,8 @@ fn handle_build_state_cancel_event(
 
     // Our initial placement is 2 steps. If we are in 2nd step and cancel
     // we simply go back to first step
-    if plan.start_joint.is_none() && plan.start_forward_specified {
-        plan.start_forward_specified = false;
+    if plan.start_intersection_id.is_none() && !plan.is_initial_placement {
+        plan.is_initial_placement = true;
     } else {
         c.entity(trigger.entity()).despawn();
     }
@@ -87,7 +83,7 @@ fn create_rail_planner(
     mut c: Commands,
     q: Query<Entity, With<RailPlanner>>,
     player_state: Query<(Entity, &PlayerCursor, &ActionState<PlayerBuildAction>)>,
-    rail_states: Query<(Entity, &Rail)>,
+    rail_states: Query<&Rail>,
     mut event: EventReader<PlayerStateEvent>,
 ) {
     // Hacky, but we want to ignore placing this on the switch to view mode
@@ -106,17 +102,14 @@ fn create_rail_planner(
 
         let mut plan = RailPlanner::new(cursor.build_pos);
 
-        plan.start_joint = rail_states.into_iter().find_map(|(e, state)| {
+        plan.start_intersection_id = rail_states.into_iter().find_map(|state| {
             get_joint_collision(state, cursor_sphere).and_then(|joint| {
                 plan.start = joint.pos;
-                plan.start_forward = -joint.forward;
-                Some(RailPathJointRef {
-                    rail_entity: e,
-                    joint_idx: if state.joints[RAIL_START_JOINT].pos == joint.pos {
-                        RAIL_START_JOINT
-                    } else {
-                        RAIL_END_JOINT
-                    },
+                plan.start_forward = joint.forward;
+                Some(if state.joints[RAIL_START_JOINT].pos == joint.pos {
+                    state.joints[RAIL_START_JOINT].intersection_id
+                } else {
+                    state.joints[RAIL_END_JOINT].intersection_id
                 })
             })
         });
@@ -142,6 +135,7 @@ fn update_rail_planner(
     mut q: Query<&mut RailPlanner>,
     mut rail_states: Query<(Entity, &mut Rail)>,
     mut player_states: Query<(&mut PlayerCursor, &ActionState<PlayerBuildAction>)>,
+    mut intersections: ResMut<RailIntersections>,
 ) {
     let (mut cursor, input) = player_states.single_mut();
     let cursor_sphere = BoundingSphere::new(cursor.build_pos, 0.1);
@@ -153,12 +147,12 @@ fn update_rail_planner(
         let towards = delta.normalize();
 
         // This is our initial placement, we don't have an orientation yet
-        if plan.is_initial_placement() {
+        if plan.is_initial_placement && plan.start_intersection_id.is_none() {
             plan.start_forward = -towards;
             plan.end_forward = towards;
 
             if input.just_pressed(&PlayerBuildAction::Interact) {
-                plan.start_forward_specified = true;
+                plan.is_initial_placement = false;
             }
         } else {
             // Calculate forwards which control curve shape
@@ -179,25 +173,25 @@ fn update_rail_planner(
             }
             plan.end_forward = Quat::from_rotation_y(cursor.manual_rotation) * plan.end_forward;
 
-            // Check if we hover over an end joint for fixed end pos
-            plan.end_joint = rail_states.into_iter().find_map(|(e, state)| {
-                get_joint_collision(state, cursor_sphere).and_then(|joint| {
-                    plan.end = joint.pos;
-                    plan.end_forward = -joint.forward;
-                    Some(RailPathJointRef {
-                        rail_entity: e,
-                        joint_idx: if state.joints[RAIL_START_JOINT].pos == joint.pos {
-                            RAIL_START_JOINT
-                        } else {
-                            RAIL_END_JOINT
-                        },
-                    })
-                })
-            });
+            // TODO: Check if we hover over another rail, if so we align our end_forward
+            // plan.end_joint = rail_states.into_iter().find_map(|(e, state)| {
+            //     get_joint_collision(state, cursor_sphere).and_then(|joint| {
+            //         plan.end = joint.pos;
+            //         plan.end_forward = -joint.forward;
+            //         Some(RailJointRef {
+            //             rail_entity: e,
+            //             joint_idx: if state.joints[RAIL_START_JOINT].pos == joint.pos {
+            //                 RAIL_START_JOINT
+            //             } else {
+            //                 RAIL_END_JOINT
+            //             },
+            //         })
+            //     })
+            // });
 
             // Validate our plan
             let length = delta.length();
-            plan.status = if length < RAIL_MIN_LENGTH && plan.end_joint.is_none() {
+            plan.status = if length < RAIL_MIN_LENGTH && plan.end_intersection_id.is_none() {
                 RailPlannerStatus::RailTooShort(delta.length())
                 // TODO: Check joints
             } else if false {
@@ -234,18 +228,12 @@ fn update_rail_planner(
             if input.just_pressed(&PlayerBuildAction::Interact)
                 && plan.status == RailPlannerStatus::Valid
             {
-                let mut rail = c.spawn_empty();
-                rail.insert(Rail::new(
-                    rail.id(),
-                    &mut rail_states.transmute_lens::<&mut Rail>().query(),
-                    &plan,
-                ));
+                let mut ec = c.spawn_empty();
+                let rail = Rail::new(ec.id(), &mut intersections, &plan);
                 plan.start = plan.end;
                 plan.start_forward = -plan.end_forward;
-                plan.start_joint = Some(RailPathJointRef {
-                    rail_entity: rail.id(),
-                    joint_idx: RAIL_END_JOINT,
-                });
+                plan.start_intersection_id = Some(rail.joints[RAIL_END_JOINT].intersection_id);
+                ec.insert(rail);
                 cursor.manual_rotation = 0.;
             }
         }
@@ -259,7 +247,7 @@ fn update_rail_planner_status(
 ) {
     let cursor = cursor.single();
     q.iter_mut().for_each(|(plan, mut text, mut node)| {
-        if plan.is_initial_placement() {
+        if plan.is_initial_placement {
             text.0 = "Specifying initial orientation".into();
         } else {
             text.0 = match plan.status {
@@ -324,5 +312,59 @@ fn draw_rail_planner(mut gizmos: Gizmos, q: Query<&RailPlanner>) {
             plan.end + plan.end_forward,
             Color::srgb(0.0, 0.0, 0.7),
         );
+    });
+}
+
+fn debug_intersections(
+    q: Query<&Rail>,
+    intersections: Res<RailIntersections>,
+    cursor: Single<&PlayerCursor>,
+    mut gizmos: Gizmos,
+    mut contexts: EguiContexts,
+) {
+    let sphere = BoundingSphere::new(cursor.world_pos, 1.0);
+
+    q.iter().for_each(|rail| {
+        if let Some(joint) = get_joint_collision(&rail, sphere) {
+            let intersection = intersections
+                .intersections
+                .get(&joint.intersection_id)
+                .unwrap();
+
+            egui::Window::new(format!("intersection {}", joint.intersection_id)).show(
+                contexts.ctx_mut(),
+                |ui| {
+                    ui.label(format!("{:#?}", intersection));
+                },
+            );
+
+            // Mark the rails that are part of this intersection
+            let get_rail_pos = |e: &Option<Entity>| {
+                if let Some(e) = e {
+                    let rail = q.get(*e).unwrap();
+                    let start = rail.joints[RAIL_START_JOINT].pos;
+                    let end = rail.joints[RAIL_END_JOINT].pos;
+                    (start, end)
+                } else {
+                    (Vec3::ZERO, Vec3::ZERO)
+                }
+            };
+
+            intersection.left.iter().for_each(|e| {
+                let (start, end) = get_rail_pos(e);
+                gizmos.line(start, end, Color::srgb(1., 0., 0.));
+            });
+
+            intersection.right.iter().for_each(|e| {
+                let (start, end) = get_rail_pos(e);
+                gizmos.line(start, end, Color::srgb(0., 1., 0.));
+            });
+
+            gizmos.arrow(
+                joint.pos,
+                joint.pos + intersection.right_forward * 5.,
+                Color::srgb(0., 0., 1.),
+            );
+        }
     });
 }

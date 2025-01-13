@@ -9,7 +9,7 @@
 use std::f32::consts::PI;
 
 use bevy::color::palettes::tailwind::*;
-use bevy::picking::pointer::{PointerInteraction, PressDirection};
+use bevy::picking::pointer::PointerInteraction;
 use bevy::{math::*, prelude::*, window::PrimaryWindow};
 
 use crate::camera::*;
