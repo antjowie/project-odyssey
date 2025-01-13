@@ -146,6 +146,9 @@ impl RailIntersections {
     }
 }
 
+/// Can be considered as a node in a graph
+/// A junction is supported by inserting an intersection
+/// Traffic control is controlled by inserting an intersection, to split traffic groups
 #[derive(Debug)]
 pub struct RailIntersection {
     pub left: [Option<Entity>; RAIL_CURVES_MAX],

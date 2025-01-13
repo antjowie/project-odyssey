@@ -1,5 +1,6 @@
 //! Entrypoint of the app
 use bevy::prelude::*;
+use bevy_egui::EguiPlugin;
 
 pub mod camera;
 pub mod debug;
@@ -23,6 +24,7 @@ impl Plugin for AppPlugin {
                     ..default()
                 },
             ),
+            EguiPlugin,
             MeshPickingPlugin,
             camera::CameraPlugin,
             debug::DebugPlugin,
