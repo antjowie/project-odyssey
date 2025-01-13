@@ -1,5 +1,3 @@
-use std::f32::consts::{FRAC_2_PI, FRAC_PI_2};
-
 use super::*;
 use bevy::{
     math::bounding::{BoundingSphere, IntersectsVolume},
@@ -102,13 +100,13 @@ impl Rail {
             .get_mut(&start_intersection_id)
             .unwrap();
 
-        connect_intersection(self_entity, &-plan.start_forward, &mut start_intersection);
+        connect_intersection(self_entity, &plan.start_forward, &mut start_intersection);
 
         let mut end_intersection = intersections
             .intersections
             .get_mut(&end_intersection_id)
             .unwrap();
-        connect_intersection(self_entity, &-plan.end_forward, &mut end_intersection);
+        connect_intersection(self_entity, &plan.end_forward, &mut end_intersection);
 
         self_state
     }
@@ -130,6 +128,15 @@ pub struct RailIntersections {
 }
 
 impl RailIntersections {
+    pub fn get_intersect_collision(
+        &self,
+        sphere: &BoundingSphere,
+    ) -> Option<(&u32, &RailIntersection)> {
+        self.intersections
+            .iter()
+            .find(|x| x.1.collision.intersects(sphere))
+    }
+
     fn get_available_index(&mut self) -> u32 {
         if self.available_indexes.len() > 0 {
             return self.available_indexes.pop().unwrap();
@@ -197,6 +204,14 @@ impl RailIntersection {
             .dot(self.right_forward)
             > 0.
     }
+
+    pub fn get_nearest_forward(&self, pos: Vec3) -> Vec3 {
+        if self.is_right_side(pos) {
+            self.right_forward
+        } else {
+            -self.right_forward
+        }
+    }
 }
 
 pub fn create_curve_control_points(
@@ -209,8 +224,8 @@ pub fn create_curve_control_points(
 
     [[
         start,
-        start - start_forward * length * 0.5,
-        end - end_forward * length * 0.5,
+        start + start_forward * length * 0.5,
+        end + end_forward * length * 0.5,
         end,
     ]]
 }
@@ -227,16 +242,6 @@ pub fn create_curve_points(points: [[Vec3; 4]; 1]) -> Vec<Vec3> {
         .unwrap()
         .iter_positions(segments)
         .collect()
-}
-
-fn get_intersect_collision<'a>(
-    intersections: &'a RailIntersections,
-    sphere: &'a BoundingSphere,
-) -> Option<(&'a u32, &'a RailIntersection)> {
-    intersections
-        .intersections
-        .iter()
-        .find(|x| x.1.collision.intersects(sphere))
 }
 
 fn debug_rail_path(mut gizmos: Gizmos, q: Query<&Rail>) {
@@ -276,7 +281,7 @@ fn debug_rail_intersections(
 ) {
     let cursor_sphere = BoundingSphere::new(cursor.build_pos, 0.1);
 
-    let collision = get_intersect_collision(&intersections, &cursor_sphere);
+    let collision = intersections.get_intersect_collision(&cursor_sphere);
 
     // Draw intersection info
     intersections.intersections.iter().for_each(|x| {

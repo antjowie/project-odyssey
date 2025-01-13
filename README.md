@@ -8,15 +8,13 @@ A train simulator "game"?
 Rail editor
 - [x] Rail planner placement iteration
 - [x] Setup rail planner validations
-- [ ] Create resource for hovered intersection
-- [ ] Reintroduce snapping to end_intersection if one is hovered
+- [x] Reintroduce snapping to end_intersection if one is hovered
 - [ ] Add vertical rail building
   - [ ] Add proper collision volume gen
   - [ ] Add proper raycasting
 - [ ] Add segment deconstruction
-- [ ] Improve joint expansion
-  - [ ] There are 2 joints, when extending treat them as one and rotation will set left or right
-  - [ ] Extend rail arbitrary from segment
+- [x] Improve joint expansion to intersection instead of seperate joints
+- [ ] Extend rail arbitrary from segment
 - [ ] Add copy pasta? 
 
 Input

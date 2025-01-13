@@ -1,7 +1,6 @@
 use std::f32::consts::FRAC_PI_2;
 
 use bevy::math::vec3;
-use bevy_egui::{egui, EguiContexts};
 
 /// Logic responsible for generating a preview of what RailBuilding will be built
 use super::*;
@@ -24,6 +23,8 @@ pub fn rail_planner_plugin(app: &mut App) {
 #[require(Text, TextFont(|| default_text_font()))]
 pub struct RailPlanner {
     pub start: Vec3,
+    /// The direction in which start joint should expand to create joint, points
+    /// towards the curve
     pub start_forward: Vec3,
     pub start_intersection_id: Option<u32>,
     /// Initial placement is used together with the presence of a start joint
@@ -105,13 +106,11 @@ fn create_rail_planner(
 
         let mut plan = RailPlanner::new(cursor.build_pos);
 
-        plan.start_intersection_id = get_intersect_collision(&intersections, &cursor_sphere)
+        plan.start_intersection_id = intersections
+            .get_intersect_collision(&cursor_sphere)
             .and_then(|x| {
                 plan.start = x.1.collision.center.into();
-                plan.start_forward = x.1.right_forward;
-                if x.1.is_right_side(cursor.world_pos) {
-                    plan.start_forward = -plan.start_forward;
-                }
+                plan.start_forward = x.1.get_nearest_forward(cursor.world_pos);
 
                 Some(*x.0)
             });
@@ -134,15 +133,9 @@ fn preview_initial_rail_planner_placement(
         Color::WHITE,
     );
 
-    if let Some(x) = get_intersect_collision(&intersections, &cursor_sphere) {
+    if let Some(x) = intersections.get_intersect_collision(&cursor_sphere) {
         let start: Vec3 = x.1.collision.center.into();
-        let mut end = start;
-
-        if x.1.is_right_side(cursor.world_pos) {
-            end += x.1.right_forward * 10.;
-        } else {
-            end -= x.1.right_forward * 10.;
-        }
+        let end = start + x.1.get_nearest_forward(cursor.world_pos) * 10.;
 
         gizmos
             .arrow(start, end, Color::srgb(1., 1., 0.))
@@ -168,8 +161,8 @@ fn update_rail_planner(
 
         // This is our initial placement, we don't have an orientation yet
         if plan.is_initial_placement() {
-            plan.start_forward = -towards;
-            plan.end_forward = towards;
+            plan.start_forward = towards;
+            plan.end_forward = -towards;
 
             if input.just_pressed(&PlayerBuildAction::Interact) {
                 plan.is_initial_placement = false;
@@ -177,37 +170,31 @@ fn update_rail_planner(
         } else {
             // Calculate forwards which control curve shape
             match cursor.curve_mode {
-                PathCurveMode::Straight => {
-                    plan.end_forward = -plan.start_forward;
-                }
                 PathCurveMode::Curve => {
-                    let incidence = -plan.start_forward;
+                    let incidence = plan.start_forward;
                     let towards_2d = Vec2::from_angle(FRAC_PI_2).rotate(towards.xz());
                     let normal = vec3(towards_2d.x, 0., towards_2d.y);
                     gizmos.line(plan.start, plan.start + normal, Color::BLACK);
-                    plan.end_forward = incidence.reflect(normal);
+                    plan.end_forward = -incidence.reflect(normal);
+                }
+                PathCurveMode::Straight => {
+                    plan.end_forward = -plan.start_forward;
                 }
                 PathCurveMode::Chase => {
-                    plan.end_forward = towards;
+                    plan.end_forward = -towards;
                 }
             }
             plan.end_forward = Quat::from_rotation_y(cursor.manual_rotation) * plan.end_forward;
 
-            // TODO: Check if we hover over another rail, if so we align our end_forward
-            // plan.end_joint = rail_states.into_iter().find_map(|(e, state)| {
-            //     get_joint_collision(state, cursor_sphere).and_then(|joint| {
-            //         plan.end = joint.pos;
-            //         plan.end_forward = -joint.forward;
-            //         Some(RailJointRef {
-            //             rail_entity: e,
-            //             joint_idx: if state.joints[RAIL_START_JOINT].pos == joint.pos {
-            //                 RAIL_START_JOINT
-            //             } else {
-            //                 RAIL_END_JOINT
-            //             },
-            //         })
-            //     })
-            // });
+            // Check if we hover over another rail, if so we align our end_forward
+            let sphere = BoundingSphere::new(cursor.world_pos, 0.1);
+            if let Some(x) = intersections.get_intersect_collision(&sphere) {
+                plan.end = x.1.collision.center.into();
+                plan.end_forward = x.1.get_nearest_forward(cursor.world_pos);
+                plan.end_intersection_id = Some(*x.0);
+            } else {
+                plan.end_intersection_id = None;
+            }
 
             // Validate our plan
             let length = delta.length();
@@ -236,7 +223,7 @@ fn update_rail_planner(
                     .iter()
                     .zip(points.iter().skip(1).zip(points.iter().skip(2)))
                     .fold(
-                        (-plan.start_forward).angle_between(first_segment),
+                        plan.start_forward.angle_between(first_segment),
                         |max, (left, (middle, right))| {
                             let left = middle - left;
                             let right = right - middle;
