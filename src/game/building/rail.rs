@@ -1,3 +1,5 @@
+use std::f32::consts::{FRAC_2_PI, FRAC_PI_2};
+
 use super::*;
 use bevy::{
     math::bounding::{BoundingSphere, IntersectsVolume},
@@ -27,9 +29,9 @@ const RAIL_END_JOINT: usize = 1;
 const RAIL_JOINTS_MAX: usize = 2;
 
 const RAIL_MIN_LENGTH: f32 = 10.;
-const RAIL_MIN_RADIANS: f32 = 10.0 * PI / 180.0;
-const RAIL_MAX_RADIANS: f32 = 22.5 * PI / 180.0;
-const RAIL_CURVES_MAX: usize = (RAIL_MAX_RADIANS / RAIL_MIN_RADIANS) as usize + 1;
+const RAIL_MIN_DELTA_RADIANS: f32 = 15.0 * PI / 180.;
+const RAIL_MAX_RADIANS: f32 = 22.5 * PI / 180.;
+const RAIL_CURVES_MAX: usize = (PI / RAIL_MIN_DELTA_RADIANS) as usize;
 
 /// Contains the details to build and connect a rail
 #[derive(Component)]
@@ -45,7 +47,6 @@ impl Rail {
     ) -> Rail {
         let start = plan.start;
         let end = plan.end;
-        let dir = (end - start).normalize();
         let size = 2.5;
 
         // Create the intersections
@@ -55,8 +56,8 @@ impl Rail {
                 idx,
                 RailIntersection {
                     right_forward,
-                    left: [None, None, None],
-                    right: [None, None, None],
+                    left: [None; RAIL_CURVES_MAX],
+                    right: [None; RAIL_CURVES_MAX],
                     collision: BoundingSphere::new(pos, size),
                 },
             );
@@ -156,25 +157,38 @@ impl RailIntersection {
             .and_then(|(i, _)| Some(i))
     }
 
-    pub fn min_angle_relative_to_others(&self, dir: Vec3, rails: &Query<&Rail>) -> f32 {
+    pub fn min_angle_relative_to_others(
+        &self,
+        intersection_id: u32,
+        dir: Vec3,
+        rails: &Query<&Rail>,
+    ) -> f32 {
         let func = |min: f32, e: &Option<Entity>| {
             if let Some(e) = e {
                 let rail = rails.get(*e).unwrap();
-                if rail.joints[RAIL_START_JOINT].forward.dot(dir) > 0. {
-                    min.min(rail.joints[RAIL_START_JOINT].forward.angle_between(dir))
-                } else {
-                    min.min(rail.joints[RAIL_END_JOINT].forward.angle_between(dir))
-                }
+
+                let (start, end) =
+                    if rail.joints[RAIL_START_JOINT].intersection_id == intersection_id {
+                        (
+                            rail.joints[RAIL_START_JOINT].pos,
+                            rail.joints[RAIL_END_JOINT].pos,
+                        )
+                    } else {
+                        (
+                            rail.joints[RAIL_END_JOINT].pos,
+                            rail.joints[RAIL_START_JOINT].pos,
+                        )
+                    };
+
+                let rail_dir = (end - start).normalize();
+
+                min.min(rail_dir.angle_between(dir))
             } else {
                 min
             }
         };
 
-        if dir.dot(self.right_forward) > 0. {
-            self.right.iter().fold(90., func)
-        } else {
-            self.left.iter().fold(90., func)
-        }
+        self.left.iter().chain(self.right.iter()).fold(90., func)
     }
 
     pub fn is_right_side(&self, pos: Vec3) -> bool {

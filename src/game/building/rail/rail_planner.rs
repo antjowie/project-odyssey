@@ -211,18 +211,18 @@ fn update_rail_planner(
 
             // Validate our plan
             let length = delta.length();
-            let start_min_angle = if plan.start_intersection_id.is_some() {
+            let start_min_angle = if let Some(id) = plan.start_intersection_id {
                 intersections
                     .intersections
-                    .get(&plan.start_intersection_id.unwrap())
+                    .get(&id)
                     .unwrap()
-                    .min_angle_relative_to_others(plan.start_forward, &rails)
+                    .min_angle_relative_to_others(id, (plan.end - plan.start).normalize(), &rails)
             } else {
                 90.
             };
             plan.status = if length < RAIL_MIN_LENGTH && plan.end_intersection_id.is_none() {
                 RailPlannerStatus::RailTooShort(delta.length())
-            } else if start_min_angle < RAIL_MIN_RADIANS {
+            } else if start_min_angle < RAIL_MIN_DELTA_RADIANS {
                 RailPlannerStatus::CurveTooShallow(start_min_angle)
             } else {
                 let points: Vec<Vec3> = create_curve_points(create_curve_control_points(
@@ -291,7 +291,7 @@ fn update_rail_planner_status(
                     format!(
                         "Curve Too Shallow {:.2} < {:.2}",
                         x.to_degrees(),
-                        RAIL_MIN_RADIANS.to_degrees()
+                        RAIL_MIN_DELTA_RADIANS.to_degrees()
                     )
                     .into()
                 }

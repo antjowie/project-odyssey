@@ -7,7 +7,9 @@ A train simulator "game"?
 
 Rail editor
 - [x] Rail planner placement iteration
-- [ ] Setup rail planner validations
+- [x] Setup rail planner validations
+- [ ] Create resource for hovered intersection
+- [ ] Reintroduce snapping to end_intersection if one is hovered
 - [ ] Add vertical rail building
   - [ ] Add proper collision volume gen
   - [ ] Add proper raycasting
