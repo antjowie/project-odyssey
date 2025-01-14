@@ -163,6 +163,7 @@ fn update_rail_planner(
         if plan.is_initial_placement() {
             plan.start_forward = towards;
             plan.end_forward = -towards;
+            plan.status = RailPlannerStatus::Valid;
 
             if input.just_pressed(&PlayerBuildAction::Interact) {
                 plan.is_initial_placement = false;

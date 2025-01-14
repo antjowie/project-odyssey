@@ -49,7 +49,7 @@ impl Rail {
 
         // Create the intersections
         let mut create_new_intersection = |pos: Vec3, right_forward: Vec3| -> u32 {
-            let idx = intersections.get_available_index();
+            let idx = intersections.id_provider.get_available_id();
             intersections.intersections.insert(
                 idx,
                 RailIntersection {
@@ -123,8 +123,7 @@ pub struct RailJoint {
 #[derive(Resource, Default)]
 pub struct RailIntersections {
     pub intersections: HashMap<u32, RailIntersection>,
-    next_index: u32,
-    available_indexes: Vec<u32>,
+    pub id_provider: IdProvider,
 }
 
 impl RailIntersections {
@@ -135,14 +134,6 @@ impl RailIntersections {
         self.intersections
             .iter()
             .find(|x| x.1.collision.intersects(sphere))
-    }
-
-    fn get_available_index(&mut self) -> u32 {
-        if self.available_indexes.len() > 0 {
-            return self.available_indexes.pop().unwrap();
-        }
-        self.next_index += 1;
-        return self.next_index;
     }
 }
 
