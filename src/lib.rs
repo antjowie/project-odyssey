@@ -6,6 +6,7 @@ pub mod camera;
 pub mod debug;
 pub mod game;
 pub mod input;
+pub mod spline;
 pub mod util;
 
 /// Plugin that represents the game

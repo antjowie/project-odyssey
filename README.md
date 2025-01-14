@@ -9,13 +9,23 @@ Rail editor
 - [x] Rail planner placement iteration
 - [x] Setup rail planner validations
 - [x] Reintroduce snapping to end_intersection if one is hovered
-- [ ] Add vertical rail building
-  - [ ] Add proper collision volume gen
-  - [ ] Add proper raycasting
+- [ ] Generate procedural mesh from spline
+- [ ] Gen collider for curve
 - [ ] Add segment deconstruction
 - [x] Improve joint expansion to intersection instead of seperate joints
 - [ ] Extend rail arbitrary from segment
+- [ ] Add vertical rail building
+  - [ ] Add proper raycasting
 - [ ] Add copy pasta? 
+
+Train
+- [ ] Support placing and creating different things on rails
+- [ ] Add train
+- [ ] Add stations
+- [ ] Support specifying stations for trains
+- [ ] Support train moving along a planned route
+- [ ] Respect traffic groups
+- [ ] Collision response
 
 Input
 - [x] Use context based input components (this can control state)
@@ -31,9 +41,6 @@ Pathfinding
 
 General gameplay
 - [ ] Add save and load
-
-Visuals
-- [ ] Generate procedural mesh from spline
 
 ### Build
 You can use cargo as you always would, simply `cargo run` would suffice.

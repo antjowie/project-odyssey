@@ -20,32 +20,33 @@ pub fn rail_planner_plugin(app: &mut App) {
 }
 
 #[derive(Component)]
-#[require(Text, TextFont(|| default_text_font()))]
+#[require(Spline, Text, TextFont(|| default_text_font()))]
 pub struct RailPlanner {
-    pub start: Vec3,
-    /// The direction in which start joint should expand to create joint, points
-    /// towards the curve
-    pub start_forward: Vec3,
     pub start_intersection_id: Option<u32>,
     /// Initial placement is used together with the presence of a start joint
     /// If we have no initial placement, we want the first placement to confirm
     /// the start_forward orientation
     pub is_initial_placement: bool,
-    pub end: Vec3,
-    pub end_forward: Vec3,
     pub end_intersection_id: Option<u32>,
     pub status: RailPlannerStatus,
 }
 
 impl RailPlanner {
-    fn new(start_pos: Vec3) -> Self {
+    fn new(start_pos: Vec3, spline: &mut Spline) -> Self {
+        spline.controls = [
+            SplineControl {
+                pos: start_pos,
+                forward: start_pos.normalize_or(Vec3::X),
+            },
+            SplineControl {
+                pos: start_pos,
+                forward: start_pos.normalize_or(Vec3::X),
+            },
+        ];
+
         RailPlanner {
-            start: start_pos,
-            start_forward: start_pos.normalize_or(Vec3::X),
             start_intersection_id: None,
             is_initial_placement: true,
-            end: start_pos,
-            end_forward: start_pos.normalize_or(Vec3::X),
             end_intersection_id: None,
             status: RailPlannerStatus::Valid,
         }
@@ -104,18 +105,20 @@ fn create_rail_planner(
     if q.is_empty() && input.just_pressed(&PlayerBuildAction::Interact) {
         let cursor_sphere = BoundingSphere::new(cursor.build_pos, 0.1);
 
-        let mut plan = RailPlanner::new(cursor.build_pos);
+        let mut spline = Spline::default();
+        let mut plan = RailPlanner::new(cursor.build_pos, &mut spline);
 
         plan.start_intersection_id = intersections
             .get_intersect_collision(&cursor_sphere)
             .and_then(|x| {
-                plan.start = x.1.collision.center.into();
-                plan.start_forward = x.1.get_nearest_forward(cursor.world_pos);
+                spline.controls[0].pos = x.1.collision.center.into();
+                spline.controls[0].forward = x.1.get_nearest_forward(cursor.world_pos);
 
                 Some(*x.0)
             });
 
         c.spawn(plan)
+            .insert(spline)
             .insert(BuildingPreview::new(state_e))
             .observe(handle_build_state_cancel_event);
     }
@@ -146,23 +149,23 @@ fn preview_initial_rail_planner_placement(
 fn update_rail_planner(
     mut gizmos: Gizmos,
     mut c: Commands,
-    mut q: Query<&mut RailPlanner>,
-    rails: Query<&Rail>,
+    mut q: Query<(&mut RailPlanner, &mut Spline), Without<Rail>>,
+    rails: Query<(&Rail, &Spline)>,
     mut player_states: Query<(&mut PlayerCursor, &ActionState<PlayerBuildAction>)>,
     mut intersections: ResMut<RailIntersections>,
 ) {
     let (mut cursor, input) = player_states.single_mut();
 
-    q.iter_mut().for_each(|mut plan| {
-        plan.end = cursor.build_pos;
+    q.iter_mut().for_each(|(mut plan, mut spline)| {
+        spline.controls[1].pos = cursor.build_pos;
 
-        let delta = plan.end - plan.start;
+        let delta = spline.controls[1].pos - spline.controls[0].pos;
         let towards = delta.normalize();
 
         // This is our initial placement, we don't have an orientation yet
         if plan.is_initial_placement() {
-            plan.start_forward = towards;
-            plan.end_forward = -towards;
+            spline.controls[0].forward = towards;
+            spline.controls[1].forward = -towards;
             plan.status = RailPlannerStatus::Valid;
 
             if input.just_pressed(&PlayerBuildAction::Interact) {
@@ -172,26 +175,31 @@ fn update_rail_planner(
             // Calculate forwards which control curve shape
             match cursor.curve_mode {
                 PathCurveMode::Curve => {
-                    let incidence = plan.start_forward;
+                    let incidence = spline.controls[0].forward;
                     let towards_2d = Vec2::from_angle(FRAC_PI_2).rotate(towards.xz());
                     let normal = vec3(towards_2d.x, 0., towards_2d.y);
-                    gizmos.line(plan.start, plan.start + normal, Color::BLACK);
-                    plan.end_forward = -incidence.reflect(normal);
+                    gizmos.line(
+                        spline.controls[0].pos,
+                        spline.controls[0].pos + normal,
+                        Color::BLACK,
+                    );
+                    spline.controls[1].forward = -incidence.reflect(normal);
                 }
                 PathCurveMode::Straight => {
-                    plan.end_forward = -plan.start_forward;
+                    spline.controls[1].forward = -spline.controls[0].forward;
                 }
                 PathCurveMode::Chase => {
-                    plan.end_forward = -towards;
+                    spline.controls[1].forward = -towards;
                 }
             }
-            plan.end_forward = Quat::from_rotation_y(cursor.manual_rotation) * plan.end_forward;
+            spline.controls[1].forward =
+                Quat::from_rotation_y(cursor.manual_rotation) * spline.controls[1].forward;
 
             // Check if we hover over another rail, if so we align our end_forward
             let sphere = BoundingSphere::new(cursor.world_pos, 0.1);
             if let Some(x) = intersections.get_intersect_collision(&sphere) {
-                plan.end = x.1.collision.center.into();
-                plan.end_forward = x.1.get_nearest_forward(cursor.world_pos);
+                spline.controls[1].pos = x.1.collision.center.into();
+                spline.controls[1].forward = x.1.get_nearest_forward(cursor.world_pos);
                 plan.end_intersection_id = Some(*x.0);
             } else {
                 plan.end_intersection_id = None;
@@ -204,7 +212,11 @@ fn update_rail_planner(
                     .intersections
                     .get(&id)
                     .unwrap()
-                    .min_angle_relative_to_others(id, (plan.end - plan.start).normalize(), &rails)
+                    .min_angle_relative_to_others(
+                        id,
+                        (spline.controls[1].pos - spline.controls[0].pos).normalize(),
+                        &rails,
+                    )
             } else {
                 90.
             };
@@ -213,18 +225,14 @@ fn update_rail_planner(
             } else if start_min_angle < RAIL_MIN_DELTA_RADIANS {
                 RailPlannerStatus::CurveTooShallow(start_min_angle)
             } else {
-                let points: Vec<Vec3> = create_curve_points(create_curve_control_points(
-                    plan.start,
-                    plan.start_forward,
-                    plan.end,
-                    plan.end_forward,
-                ));
+                let points: Vec<Vec3> =
+                    spline.create_curve_points(spline.create_curve_control_points());
                 let first_segment = points[1] - points[0];
                 let max_angle = points
                     .iter()
                     .zip(points.iter().skip(1).zip(points.iter().skip(2)))
                     .fold(
-                        plan.start_forward.angle_between(first_segment),
+                        spline.controls[0].forward.angle_between(first_segment),
                         |max, (left, (middle, right))| {
                             let left = middle - left;
                             let right = right - middle;
@@ -244,13 +252,18 @@ fn update_rail_planner(
             if input.just_pressed(&PlayerBuildAction::Interact)
                 && plan.status == RailPlannerStatus::Valid
             {
+                // Create the rail
                 let mut ec = c.spawn_empty();
-                let rail = Rail::new(ec.id(), &mut intersections, &plan);
-                plan.start = plan.end;
-                plan.start_forward = -plan.end_forward;
-                plan.start_intersection_id = Some(rail.joints[RAIL_END_JOINT].intersection_id);
-                ec.insert(rail);
+                let rail = Rail::new(ec.id(), &mut intersections, &plan, &spline);
+                ec.insert(spline.clone());
+
+                // Update the plan
+                spline.controls[0].pos = spline.controls[1].pos;
+                spline.controls[0].forward = -spline.controls[1].forward;
+                plan.start_intersection_id = Some(rail.joints[1].intersection_id);
                 cursor.manual_rotation = 0.;
+
+                ec.insert(rail);
             }
         }
     });
@@ -305,10 +318,9 @@ fn update_rail_planner_status(
     });
 }
 
-fn draw_rail_planner(mut gizmos: Gizmos, q: Query<&RailPlanner>) {
-    q.into_iter().for_each(|plan| {
-        let points =
-            create_curve_control_points(plan.start, plan.start_forward, plan.end, plan.end_forward);
+fn draw_rail_planner(mut gizmos: Gizmos, q: Query<(&RailPlanner, &Spline)>) {
+    q.into_iter().for_each(|(plan, spline)| {
+        let points = spline.create_curve_control_points();
         // Draw our control points
         gizmos.linestrip(points[0], Color::srgb(0.5, 0.5, 0.5));
 
@@ -318,7 +330,7 @@ fn draw_rail_planner(mut gizmos: Gizmos, q: Query<&RailPlanner>) {
         } else {
             Color::srgb(1.0, 0.1, 0.1)
         };
-        gizmos.linestrip(create_curve_points(points), color);
+        gizmos.linestrip(spline.create_curve_points(points), color);
         // info!(
         //     "points {:?}\n
         //     pos {:?}",
@@ -326,15 +338,19 @@ fn draw_rail_planner(mut gizmos: Gizmos, q: Query<&RailPlanner>) {
         //     curve.iter_positions(STEPS).collect::<Vec<Vec3>>()
         // );
 
-        gizmos.line(plan.start, plan.end, Color::srgb(0.7, 0.7, 0.7));
         gizmos.line(
-            plan.start,
-            plan.start + plan.start_forward,
+            spline.controls[0].pos,
+            spline.controls[1].pos,
+            Color::srgb(0.7, 0.7, 0.7),
+        );
+        gizmos.line(
+            spline.controls[0].pos,
+            spline.controls[0].pos + spline.controls[0].forward,
             Color::srgb(0.7, 0.0, 0.0),
         );
         gizmos.line(
-            plan.end,
-            plan.end + plan.end_forward,
+            spline.controls[1].pos,
+            spline.controls[1].pos + spline.controls[1].forward,
             Color::srgb(0.0, 0.0, 0.7),
         );
     });
