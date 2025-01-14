@@ -168,7 +168,10 @@ fn update_rail_planner(
             spline.controls[1].forward = -towards;
             plan.status = RailPlannerStatus::Valid;
 
-            if input.just_pressed(&PlayerBuildAction::Interact) {
+            // If we have no orientation, we get no forward
+            if spline.controls[0].pos != spline.controls[1].pos
+                && input.just_pressed(&PlayerBuildAction::Interact)
+            {
                 plan.is_initial_placement = false;
             }
         } else {

@@ -50,6 +50,8 @@ impl Spline {
 #[derive(Default)]
 pub struct SplineControl {
     pub pos: Vec3,
+    /// Points in the direction of the curve
+    /// EX: for a horizontal curve the left control would point to the right
     pub forward: Vec3,
 }
 

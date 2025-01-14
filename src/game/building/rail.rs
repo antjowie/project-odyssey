@@ -1,7 +1,7 @@
 use super::*;
 use bevy::{
     math::bounding::{BoundingSphere, IntersectsVolume},
-    utils::HashMap,
+    utils::{hashbrown::HashSet, HashMap},
 };
 use bevy_egui::{egui, EguiContexts};
 use bounding::BoundingVolume;
@@ -43,29 +43,14 @@ impl Rail {
     ) -> Rail {
         let start = spline.controls[0].pos;
         let end = spline.controls[1].pos;
-        let size = 2.5;
 
-        // Create the intersections
-        let mut create_new_intersection = |pos: Vec3, right_forward: Vec3| -> u32 {
-            let idx = intersections.id_provider.get_available_id();
-            intersections.intersections.insert(
-                idx,
-                RailIntersection {
-                    right_forward,
-                    left: [None; RAIL_CURVES_MAX],
-                    right: [None; RAIL_CURVES_MAX],
-                    collision: BoundingSphere::new(pos, size),
-                },
-            );
-            idx
-        };
+        let start_intersection_id = plan.start_intersection_id.unwrap_or_else(|| {
+            intersections.create_new_intersection(start, spline.controls[0].forward)
+        });
 
-        let start_intersection_id = plan
-            .start_intersection_id
-            .unwrap_or_else(|| create_new_intersection(start, spline.controls[1].forward));
-        let end_intersection_id = plan
-            .end_intersection_id
-            .unwrap_or_else(|| create_new_intersection(end, spline.controls[1].forward));
+        let end_intersection_id = plan.end_intersection_id.unwrap_or_else(|| {
+            intersections.create_new_intersection(end, -spline.controls[1].forward)
+        });
 
         let self_state = Rail {
             joints: [
@@ -126,6 +111,32 @@ pub struct RailIntersections {
 }
 
 impl RailIntersections {
+    pub fn get_connected_intersections(
+        &self,
+        intersection_id: u32,
+        rails: &Query<&Rail>,
+    ) -> Vec<u32> {
+        let mut collect = HashSet::new();
+        self.gather(intersection_id, rails, &mut collect);
+        collect.into_iter().collect()
+    }
+
+    fn gather(&self, intersection_id: u32, rails: &Query<&Rail>, collect: &mut HashSet<u32>) {
+        collect.insert(intersection_id);
+        let root = self.intersections.get(&intersection_id).unwrap();
+        root.left.iter().chain(root.right.iter()).for_each(|e| {
+            if let Some(e) = e {
+                let rail = rails.get(*e).unwrap();
+                if !collect.contains(&rail.joints[0].intersection_id) {
+                    self.gather(rail.joints[0].intersection_id, rails, collect);
+                }
+                if !collect.contains(&rail.joints[1].intersection_id) {
+                    self.gather(rail.joints[1].intersection_id, rails, collect);
+                }
+            }
+        });
+    }
+
     pub fn get_intersect_collision(
         &self,
         sphere: &BoundingSphere,
@@ -133,6 +144,22 @@ impl RailIntersections {
         self.intersections
             .iter()
             .find(|x| x.1.collision.intersects(sphere))
+    }
+
+    pub fn create_new_intersection(&mut self, pos: Vec3, right_forward: Vec3) -> u32 {
+        const SIZE: f32 = 2.5;
+        let idx = self.id_provider.get_available_id();
+        self.intersections.insert(
+            idx,
+            RailIntersection {
+                right_forward,
+                left: [None; RAIL_CURVES_MAX],
+                right: [None; RAIL_CURVES_MAX],
+                collision: BoundingSphere::new(pos, SIZE),
+            },
+        );
+
+        idx
     }
 }
 
@@ -143,7 +170,9 @@ impl RailIntersections {
 pub struct RailIntersection {
     pub left: [Option<Entity>; RAIL_CURVES_MAX],
     pub right: [Option<Entity>; RAIL_CURVES_MAX],
-    /// The right direction, required to know where to store a Rail
+    /// The "right" forward decided whether the rail will be put in the left or right group.
+    /// When traversing the rails we know if we can go left or right by aligning our
+    /// incoming dir with the right_forward dir
     pub right_forward: Vec3,
     pub collision: BoundingSphere,
 }
@@ -234,6 +263,22 @@ fn debug_rail_intersections(
 
     let collision = intersections.get_intersect_collision(&cursor_sphere);
 
+    // Mark the rails that are part of this intersection
+    let get_rail_pos = |e: &Option<Entity>| {
+        if let Some(e) = e {
+            let spline = q.get(*e);
+            if let Ok(spline) = spline {
+                let start = spline.controls[0].pos;
+                let end = spline.controls[1].pos;
+                Some((start, end))
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    };
+
     // Draw intersection info
     intersections.intersections.iter().for_each(|x| {
         gizmos.sphere(
@@ -245,6 +290,25 @@ fn debug_rail_intersections(
                 Color::WHITE
             },
         );
+
+        // // Draw connected rails
+        // x.1.left.iter().for_each(|e| {
+        //     if let Some((start, end)) = get_rail_pos(e) {
+        //         let side = Quat::from_rotation_y(FRAC_PI_2) * (start - end).normalize() * 2.5;
+        //         gizmos.line(start + side, end, Color::srgb(0., 1., 0.));
+        //     }
+        // });
+        // x.1.right.iter().for_each(|e| {
+        //     if let Some((start, end)) = get_rail_pos(e) {
+        //         let side = Quat::from_rotation_y(FRAC_PI_2) * (start - end).normalize() * 2.5;
+        //         gizmos.line(start - side, end, Color::srgb(1., 0., 0.));
+        //     }
+        // });
+
+        // // Draw right_forward
+        // let start: Vec3 = x.1.collision.center.into();
+        // let end: Vec3 = start + x.1.right_forward * 5.;
+        // gizmos.arrow(start, end, Color::srgb(0., 0., 1.));
     });
 
     // Print hovered intersection info
@@ -253,31 +317,15 @@ fn debug_rail_intersections(
             ui.label(format!("{:#?}", collision.1));
         });
 
-        // Mark the rails that are part of this intersection
-        let get_rail_pos = |e: &Option<Entity>| {
-            if let Some(e) = e {
-                let spline = q.get(*e);
-                if let Ok(spline) = spline {
-                    let start = spline.controls[0].pos;
-                    let end = spline.controls[1].pos;
-                    Some((start, end))
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        };
-
         // Draw connected rails
         collision.1.left.iter().for_each(|e| {
             if let Some((start, end)) = get_rail_pos(e) {
-                gizmos.line(start, end, Color::srgb(1., 0., 0.));
+                gizmos.line(start + Vec3::Y, end + Vec3::Y, Color::srgb(0., 1., 0.));
             }
         });
         collision.1.right.iter().for_each(|e| {
             if let Some((start, end)) = get_rail_pos(e) {
-                gizmos.line(start, end, Color::srgb(0., 1., 0.));
+                gizmos.line(start + Vec3::Y, end + Vec3::Y, Color::srgb(1., 0., 0.));
             }
         });
 

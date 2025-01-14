@@ -1,9 +1,5 @@
 use crate::{game::*, input::*};
-use bevy::{
-    math::vec3,
-    prelude::*,
-    window::{CursorGrabMode, PrimaryWindow},
-};
+use bevy::{math::vec3, prelude::*};
 use player::PlayerCursor;
 
 pub struct CameraPlugin;

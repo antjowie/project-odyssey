@@ -1,6 +1,4 @@
 //! Any buildings that can be built and placed
-use std::default;
-
 use super::*;
 use bevy::{ecs::traversal::Traversal, pbr::NotShadowCaster};
 
