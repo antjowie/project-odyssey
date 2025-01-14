@@ -32,6 +32,6 @@ strip = true
 project_odyssey_macros = { path = "macros" }
 bevy = "0.15.1"
 bevy-inspector-egui = "0.28.1"
-bevy_egui = "0.32.0"
+bevy_egui = "0.31.1"
 leafwing-input-manager = { "version" = "0.16.0", features = ["egui"] }
 petgraph = "0.7.1"
