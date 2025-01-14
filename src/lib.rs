@@ -30,6 +30,7 @@ impl Plugin for AppPlugin {
             camera::CameraPlugin,
             debug::DebugPlugin,
             game::GamePlugin,
+            spline::SplinePlugin,
         ));
     }
 }

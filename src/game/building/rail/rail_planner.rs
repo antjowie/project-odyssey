@@ -6,21 +6,22 @@ use bevy::math::vec3;
 use super::*;
 
 pub fn rail_planner_plugin(app: &mut App) {
+    app.add_systems(Startup, setup_rail_planner_feedback_text);
     app.add_systems(
         Update,
-        (
+        ((
             create_rail_planner,
             update_rail_planner,
-            update_rail_planner_status,
+            update_rail_planner_status.run_if(any_with_component::<RailPlannerStatusFeedback>),
             draw_rail_planner,
             preview_initial_rail_planner_placement.run_if(not(any_with_component::<RailPlanner>)),
         )
-            .run_if(any_with_component::<InputContext<PlayerBuildAction>>),
+            .run_if(any_with_component::<InputContext<PlayerBuildAction>>),),
     );
 }
 
 #[derive(Component)]
-#[require(Spline, Text, TextFont(|| default_text_font()))]
+#[require(Spline(|| *Spline::default().with_max_segments(10)), SplineMesh)]
 pub struct RailPlanner {
     pub start_intersection_id: Option<u32>,
     /// Initial placement is used together with the presence of a start joint
@@ -57,6 +58,11 @@ impl RailPlanner {
     }
 }
 
+/// Text in world space representing the status
+#[derive(Component)]
+#[require(Text, TextFont(|| default_text_font()))]
+struct RailPlannerStatusFeedback;
+
 #[derive(Default, PartialEq, Debug)]
 pub enum RailPlannerStatus {
     #[default]
@@ -84,12 +90,17 @@ fn handle_build_state_cancel_event(
     }
 }
 
+fn setup_rail_planner_feedback_text(mut c: Commands) {
+    c.spawn(RailPlannerStatusFeedback);
+}
+
 fn create_rail_planner(
     mut c: Commands,
     q: Query<Entity, With<RailPlanner>>,
     player_state: Query<(Entity, &PlayerCursor, &ActionState<PlayerBuildAction>)>,
     intersections: Res<RailIntersections>,
     mut event: EventReader<PlayerStateEvent>,
+    asset: Res<RailAsset>,
 ) {
     // Hacky, but we want to ignore placing this on the switch to view mode
     for ev in event.read() {
@@ -120,6 +131,7 @@ fn create_rail_planner(
         c.spawn(plan)
             .insert(spline)
             .insert(BuildingPreview::new(state_e))
+            .insert(MeshMaterial3d(asset.material.clone()))
             .observe(handle_build_state_cancel_event);
     }
 }
@@ -153,6 +165,7 @@ fn update_rail_planner(
     rails: Query<(&Rail, &Spline)>,
     mut player_states: Query<(&mut PlayerCursor, &ActionState<PlayerBuildAction>)>,
     mut intersections: ResMut<RailIntersections>,
+    asset: Res<RailAsset>,
 ) {
     let (mut cursor, input) = player_states.single_mut();
 
@@ -258,7 +271,9 @@ fn update_rail_planner(
                 // Create the rail
                 let mut ec = c.spawn_empty();
                 let rail = Rail::new(ec.id(), &mut intersections, &plan, &spline);
+
                 ec.insert(spline.clone());
+                ec.insert(MeshMaterial3d(asset.material.clone()));
 
                 // Update the plan
                 spline.controls[0].pos = spline.controls[1].pos;
@@ -266,6 +281,7 @@ fn update_rail_planner(
                 plan.start_intersection_id = Some(rail.joints[1].intersection_id);
                 cursor.manual_rotation = 0.;
 
+                // Rail is inserted at the end because it moves rail, which is still used
                 ec.insert(rail);
             }
         }
@@ -273,12 +289,19 @@ fn update_rail_planner(
 }
 
 fn update_rail_planner_status(
-    mut q: Query<(&RailPlanner, &mut Text, &mut Node)>,
+    feedback: Single<(&mut Text, &mut Node), With<RailPlannerStatusFeedback>>,
+    plan: Query<&RailPlanner>,
     cursor: Query<&PlayerCursor>,
     input_entries: Res<AllInputContextEntries>,
 ) {
     let cursor = cursor.single();
-    q.iter_mut().for_each(|(plan, mut text, mut node)| {
+
+    let (mut text, mut node) = feedback.into_inner();
+
+    if plan.is_empty() {
+        text.0.clear();
+    } else {
+        let plan = plan.single();
         if plan.is_initial_placement() {
             text.0 = "Specifying initial orientation".into();
         } else {
@@ -313,12 +336,12 @@ fn update_rail_planner_status(
 
             text.0 += format!("\n<{}> CurveMode {}", input, cursor.curve_mode).as_str();
         }
+    }
 
-        if let Some(pos) = cursor.screen_pos {
-            node.left = Val::Px(pos.x);
-            node.top = Val::Px(pos.y - 48.);
-        }
-    });
+    if let Some(pos) = cursor.screen_pos {
+        node.left = Val::Px(pos.x);
+        node.top = Val::Px(pos.y - 48.);
+    }
 }
 
 fn draw_rail_planner(mut gizmos: Gizmos, q: Query<(&RailPlanner, &Spline)>) {

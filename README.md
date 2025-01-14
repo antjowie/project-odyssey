@@ -9,7 +9,7 @@ Rail editor
 - [x] Rail planner placement iteration
 - [x] Setup rail planner validations
 - [x] Reintroduce snapping to end_intersection if one is hovered
-- [ ] Generate procedural mesh from spline
+- [x] Generate procedural mesh from spline
 - [ ] Gen collider for curve
 - [ ] Add segment deconstruction
 - [x] Improve joint expansion to intersection instead of seperate joints

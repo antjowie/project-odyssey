@@ -18,6 +18,7 @@ pub(super) fn rail_plugin(app: &mut App) {
         rail_graph::rail_graph_plugin,
         rail_planner::rail_planner_plugin,
     ));
+    app.add_systems(Startup, load_rail_asset);
     app.add_systems(Update, (debug_rail_path, debug_rail_intersections));
     app.init_resource::<RailIntersections>();
 }
@@ -27,9 +28,14 @@ const RAIL_MIN_DELTA_RADIANS: f32 = 15.0 * PI / 180.;
 const RAIL_MAX_RADIANS: f32 = 22.5 * PI / 180.;
 const RAIL_CURVES_MAX: usize = (PI / RAIL_MIN_DELTA_RADIANS) as usize;
 
+#[derive(Resource)]
+pub struct RailAsset {
+    pub material: Handle<StandardMaterial>,
+}
+
 /// Contains the details to build and connect a rail
 #[derive(Component)]
-#[require(Spline)]
+#[require(Spline, SplineMesh, Name(|| Name::new("Rail")))]
 pub struct Rail {
     pub joints: [RailJoint; 2],
 }
@@ -227,6 +233,15 @@ impl RailIntersection {
             -self.right_forward
         }
     }
+}
+
+fn load_rail_asset(mut c: Commands, mut materials: ResMut<Assets<StandardMaterial>>) {
+    c.insert_resource(RailAsset {
+        material: materials.add(StandardMaterial {
+            base_color: Color::srgb(0.5, 0.5, 0.5),
+            ..default()
+        }),
+    });
 }
 
 fn debug_rail_path(mut gizmos: Gizmos, q: Query<&Spline, With<Rail>>) {

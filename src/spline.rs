@@ -1,9 +1,19 @@
-use bevy::prelude::*;
+use bevy::{asset::RenderAssetUsages, prelude::*};
 
-#[derive(Component, Clone, Copy)]
+pub(super) struct SplinePlugin;
+
+impl Plugin for SplinePlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(Update, update_spline_mesh);
+        app.register_type::<SplineMesh>();
+    }
+}
+
+#[derive(Component, Clone, Copy, Reflect, PartialEq)]
 pub struct Spline {
     pub controls: [SplineControl; 2],
     pub min_segment_length: f32,
+    pub max_segments: Option<usize>,
 }
 
 impl Default for Spline {
@@ -11,11 +21,17 @@ impl Default for Spline {
         Self {
             controls: Default::default(),
             min_segment_length: 10.0,
+            max_segments: None,
         }
     }
 }
 
 impl Spline {
+    pub fn with_max_segments(&mut self, max_segments: usize) -> &mut Self {
+        self.max_segments = Some(max_segments);
+        self
+    }
+
     pub fn create_curve_control_points(&self) -> [[Vec3; 4]; 1] {
         let start = &self.controls[0];
         let end = &self.controls[1];
@@ -34,20 +50,28 @@ impl Spline {
     pub fn create_curve_points(&self, points: [[Vec3; 4]; 1]) -> Vec<Vec3> {
         let start = points[0][0];
         let end = points[0][3];
-        let segments = ((start.distance(end) / self.min_segment_length).round() as usize)
-            .max(2)
-            .min(10);
+        let mut segments =
+            ((start.distance(end) / self.min_segment_length).round() as usize).max(2);
+        if let Some(max_segments) = self.max_segments {
+            segments = segments.min(max_segments);
+        }
+
         CubicBezier::new(points)
             .to_curve()
             .unwrap()
             .iter_positions(segments)
             .collect()
     }
+
+    pub fn create_cubic_curve(&self) -> CubicCurve<Vec3> {
+        CubicBezier::new(self.create_curve_control_points())
+            .to_curve()
+            .unwrap()
+    }
 }
 
-#[derive(Clone, Copy)]
 /// Represents the start and end of a spline, also knows as knots
-#[derive(Default)]
+#[derive(Default, Clone, Copy, Reflect, PartialEq)]
 pub struct SplineControl {
     pub pos: Vec3,
     /// Points in the direction of the curve
@@ -56,6 +80,73 @@ pub struct SplineControl {
 }
 
 /// Samples a spline and generates a mesh from it
-#[derive(Component)]
-#[require(Spline)]
-pub struct SplineMesh {}
+#[derive(Component, Reflect)]
+#[require(Spline, Mesh3d)]
+pub struct SplineMesh {
+    pub width: f32,
+    pub source_spline_data: Spline,
+}
+
+impl Default for SplineMesh {
+    fn default() -> Self {
+        Self {
+            width: 2.,
+            source_spline_data: default(),
+        }
+    }
+}
+
+fn update_spline_mesh(
+    mut q: Query<(&mut Mesh3d, &Spline, &mut SplineMesh), Changed<Spline>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut gizmos: Gizmos,
+) {
+    q.iter_mut()
+        .for_each(|(mut mesh, spline, mut spline_mesh)| {
+            if spline_mesh.source_spline_data == *spline {
+                return;
+            }
+            spline_mesh.source_spline_data = spline.clone();
+
+            let mesh = match meshes.get_mut(mesh.id()) {
+                Some(mesh) => mesh,
+                None => {
+                    mesh.0 = meshes.add(create_spline_mesh());
+                    meshes.get_mut(mesh.id()).unwrap()
+                }
+            };
+
+            let mut points = spline.create_curve_points(spline.create_curve_control_points());
+            points.push(spline.controls[1].pos - spline.controls[1].forward);
+            let mut vertices = Vec::new();
+            vertices.reserve(points.len() * 2);
+
+            points
+                .iter()
+                .zip(points.iter().skip(1))
+                .for_each(|(sample, next)| {
+                    let forward = (next - sample).normalize();
+                    let side = forward.cross(Vec3::Y);
+
+                    // Generate left and right vertices
+                    // TODO: Remove the vertical offset once we have a mesh with height, otherwise we will have z-fighting
+                    let right = sample - side * spline_mesh.width + Vec3::Y * 0.01;
+                    let left = sample + side * spline_mesh.width + Vec3::Y * 0.01;
+                    vertices.push(right);
+                    vertices.push(left);
+
+                    gizmos.arrow(*sample, sample + forward, Color::srgb(1., 0., 0.));
+                    gizmos.line(*sample, right, Color::srgb(0., 1., 0.));
+                    gizmos.line(*sample, left, Color::srgb(1., 0., 0.));
+                });
+
+            mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
+        });
+}
+
+fn create_spline_mesh() -> Mesh {
+    Mesh::new(
+        bevy::render::mesh::PrimitiveTopology::TriangleStrip,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+    )
+}
