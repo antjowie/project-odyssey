@@ -40,7 +40,7 @@ impl Plugin for GamePlugin {
         app.add_systems(
             Update,
             (
-                // draw_mesh_intersections,
+                draw_mesh_intersections,
                 draw_build_grid.run_if(in_player_state(PlayerState::Building)),
                 // snap_building_preview_to_build_pos,
                 // validate_building_preview.run_if(on_timer(Duration::from_secs(1))),
@@ -116,6 +116,7 @@ fn update_cursor(
     };
 }
 
+/// https://bevyengine.org/examples/picking/mesh-picking/
 fn draw_mesh_intersections(pointers: Query<&PointerInteraction>, mut gizmos: Gizmos) {
     for (point, normal) in pointers
         .iter()

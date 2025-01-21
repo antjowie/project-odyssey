@@ -31,6 +31,7 @@ const RAIL_CURVES_MAX: usize = (PI / RAIL_MIN_DELTA_RADIANS) as usize;
 #[derive(Resource)]
 pub struct RailAsset {
     pub material: Handle<StandardMaterial>,
+    pub hover_material: Handle<StandardMaterial>,
 }
 
 /// Contains the details to build and connect a rail
@@ -239,6 +240,10 @@ fn load_rail_asset(mut c: Commands, mut materials: ResMut<Assets<StandardMateria
     c.insert_resource(RailAsset {
         material: materials.add(StandardMaterial {
             base_color: Color::srgb(0.5, 0.5, 0.5),
+            ..default()
+        }),
+        hover_material: materials.add(StandardMaterial {
+            base_color: Color::srgba(0.1, 0.1, 0.5, 0.5),
             ..default()
         }),
     });

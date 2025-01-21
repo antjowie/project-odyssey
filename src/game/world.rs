@@ -69,22 +69,31 @@ fn spawn_test_world(
         NotShadowCaster,
     ));
 
+    let material = materials.add(Color::WHITE);
+    let hover_material = materials.add(Color::srgb(0.5, 0.5, 1.));
     c.spawn((
-        Name::new("Terrain"),
+        Name::new("Floor"),
         Mesh3d(meshes.add(Plane3d::new(Vec3::Y, Vec2::splat(100_000.0)))),
-        MeshMaterial3d(materials.add(Color::WHITE)),
+        MeshMaterial3d(material.clone()),
     ));
 
     // Blocks
     const LEN: f32 = 2.0;
     let mesh = meshes.add(Cuboid::from_length(LEN));
     let material = materials.add(Color::BLACK);
+    let hover_material = materials.add(Color::srgb(0.5, 0.5, 1.));
     for i in 0..10 {
         c.spawn((
             Name::new("Block"),
             Mesh3d(mesh.clone()),
             MeshMaterial3d(material.clone()),
             Transform::from_translation(Vec3::new(LEN * 2.0 * i as f32, LEN * 0.5, 0.0)),
+        ))
+        .observe(crate::game::building::update_material_on::<Pointer<Over>>(
+            hover_material.clone(),
+        ))
+        .observe(crate::game::building::update_material_on::<Pointer<Out>>(
+            material.clone(),
         ));
     }
 }

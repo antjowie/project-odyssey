@@ -272,8 +272,14 @@ fn update_rail_planner(
                 let mut ec = c.spawn_empty();
                 let rail = Rail::new(ec.id(), &mut intersections, &plan, &spline);
 
-                ec.insert(spline.clone());
-                ec.insert(MeshMaterial3d(asset.material.clone()));
+                ec.insert(spline.clone())
+                    .insert(MeshMaterial3d(asset.material.clone()))
+                    .observe(update_material_on::<Pointer<Over>>(
+                        asset.hover_material.clone(),
+                    ))
+                    .observe(update_material_on::<Pointer<Out>>(asset.material.clone()));
+                // .observe(update_material_on::<Pointer<Down>>(pressed_matl.clone()))
+                // .observe(update_material_on::<Pointer<Up>>(hover_matl.clone()));
 
                 // Update the plan
                 spline.controls[0].pos = spline.controls[1].pos;
