@@ -1,19 +1,21 @@
 use rail::Rail;
 
-use crate::spline::Spline;
-
 use super::*;
-
-use super::{in_player_state, PlayerBuildAction};
+use crate::spline::Spline;
 
 pub(super) fn train_plugin(app: &mut App) {
     app.add_systems(Startup, load_train_asset);
     app.add_systems(
         Update,
-        preview_train_placement
-            .run_if(in_player_state(PlayerState::Building).and(is_placeable(Placeable::Train))),
+        preview_train_placement.run_if(
+            in_player_state(PlayerState::Building).and(is_placeable_preview(Placeable::Train)),
+        ),
     );
 }
+
+#[derive(Component)]
+#[require(Placeable(||Placeable::Train), Name(|| Name::new("Train")))]
+pub struct Train;
 
 #[derive(Resource)]
 pub struct TrainAsset {
@@ -27,22 +29,36 @@ fn load_train_asset(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     c.insert_resource(TrainAsset {
-        mesh: meshes.add(Extrusion::new(
-            Triangle2d::new(Vec2::new(-0.5, 1.), Vec2::new(0.5, 1.), Vec2::new(0., -1.)),
-            1.,
+        mesh: meshes.add(Tetrahedron::new(
+            vec3(0.0, 2.0, 2.0),
+            vec3(-2.0, 0.0, 2.0),
+            vec3(2.0, 0.0, 2.0),
+            vec3(0.0, 0.0, -2.0),
         )),
+        // mesh: meshes.add(Extrusion::new(
+        //     Triangle2d::new(Vec2::new(-0.5, 1.), Vec2::new(0.5, 1.), Vec2::new(0., -1.)),
+        //     1.,
+        // )),
         material: materials.add(Color::BLACK),
     });
 }
 
 fn preview_train_placement(
-    q: Query<(&PlayerCursor, &ActionState<PlayerBuildAction>)>,
-    cameras: Query<(&Camera, &Transform)>,
+    mut q: Query<(&mut PlayerCursor, &ActionState<PlayerBuildAction>)>,
+    mut preview: Query<(&mut Transform, &mut PlaceablePreview), With<Train>>,
+    cameras: Query<(&Camera, &Transform), Without<Train>>,
     rails: Query<&Spline, With<Rail>>,
-    mut gizmos: Gizmos,
+    // mut gizmos: Gizmos,
     mut ray_cast: MeshRayCast,
+    mut previous_had_hit: Local<bool>,
+    mut align_to_right: Local<bool>,
 ) {
-    let (cursor, input) = q.single();
+    if preview.is_empty() {
+        return;
+    }
+    let mut preview = preview.single_mut();
+
+    let (mut cursor, input) = q.single_mut();
     let (_camera, transform) = cameras
         .iter()
         .find(|(camera, _transform)| camera.is_active)
@@ -52,8 +68,12 @@ fn preview_train_placement(
         origin: transform.translation,
         direction: Dir3::new(cursor.build_pos - transform.translation).unwrap(),
     };
-    let hits = ray_cast.cast_ray(ray, &RayCastSettings::default());
+    let hits = ray_cast.cast_ray(
+        ray,
+        &RayCastSettings::default().with_filter(&|e| rails.contains(e)),
+    );
     let mut pos = cursor.build_pos;
+    let mut forward = preview.0.forward();
     if hits.len() > 0 {
         if let Ok(spline) = rails.get(hits[0].0) {
             let mut points = spline.create_curve_points(spline.create_curve_control_points());
@@ -70,12 +90,35 @@ fn preview_train_placement(
                 .unwrap();
 
             // Calculate perpendicular vec from pos to rail
-            let forward = (end - start).normalize();
+            forward = Dir3::new(end - start).unwrap();
             let right = forward.cross(Vec3::Y);
 
             let offset = (start - pos).project_onto(right);
             pos += offset;
+            cursor.manual_rotation = 0.0;
+
+            if !*previous_had_hit {
+                *align_to_right = forward.dot(preview.0.forward().as_vec3()) > 0.;
+            }
+
+            if input.just_pressed(&PlayerBuildAction::Rotate) {
+                *align_to_right = !*align_to_right;
+            }
+
+            if !*align_to_right {
+                forward = Dir3::new(forward.as_vec3() * -1.0).unwrap();
+            }
+
+            *previous_had_hit = true;
         }
+    } else {
+        forward = Quat::from_rotation_y(cursor.manual_rotation) * forward;
+
+        *previous_had_hit = false;
     }
-    gizmos.sphere(Isometry3d::from_translation(pos), 10., Color::WHITE);
+    preview.1.valid = *previous_had_hit;
+    cursor.manual_rotation = 0.0;
+    preview.0.translation = pos;
+    preview.0.look_at(pos + forward.as_vec3(), Vec3::Y);
+    // gizmos.sphere(Isometry3d::from_translation(pos), 10., Color::WHITE);
 }

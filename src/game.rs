@@ -42,11 +42,6 @@ impl Plugin for GamePlugin {
             (
                 draw_mesh_intersections,
                 draw_build_grid.run_if(not(in_player_state(PlayerState::Viewing))),
-                // snap_building_preview_to_build_pos,
-                // validate_building_preview.run_if(on_timer(Duration::from_secs(1))),
-                // process_view_state_input.run_if(in_player_state(PlayerState::Viewing)),
-                // process_state_change,
-                // create_building_preview,
             ),
         );
         app.register_type::<PlayerCursor>();
@@ -126,37 +121,6 @@ fn draw_mesh_intersections(pointers: Query<&PointerInteraction>, mut gizmos: Giz
         gizmos.sphere(point, 0.05, RED_500);
         gizmos.arrow(point, point + normal.normalize() * 0.5, PINK_100);
     }
-}
-
-fn create_building_preview(
-    q: Query<Entity, With<PlaceablePreview>>,
-    mut c: Commands,
-    mut event: EventReader<PlayerStateEvent>,
-) {
-    for e in event.read() {
-        if e.new_state == PlayerState::Viewing && e.old_state != PlayerState::Building {
-            q.into_iter().for_each(|e| {
-                c.entity(e).despawn();
-            });
-        }
-    }
-}
-
-fn snap_building_preview_to_build_pos(
-    mut q: Query<&mut Transform, With<PlaceablePreview>>,
-    cursor: Query<&PlayerCursor>,
-) {
-    let cursor = cursor.single();
-
-    q.iter_mut().for_each(|mut transform| {
-        transform.translation = cursor.build_pos;
-    });
-}
-
-fn validate_building_preview(mut q: Query<&mut PlaceablePreview>) {
-    q.iter_mut().for_each(|mut preview| {
-        preview.valid = !preview.valid;
-    });
 }
 
 fn draw_build_grid(mut gizmos: Gizmos, q: Query<&PlayerCursor>) {

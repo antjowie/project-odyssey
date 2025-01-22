@@ -7,6 +7,31 @@ use train::*;
 pub mod rail;
 pub mod train;
 
+pub(super) fn placeable_plugin(app: &mut App) {
+    app.add_systems(Startup, load_assets);
+    app.add_plugins(rail_plugin);
+    app.add_plugins(train_plugin);
+    app.add_event::<PlaceablePreviewChangedEvent>();
+
+    app.add_systems(
+        Update,
+        (
+            cleanup_build_preview_on_state_change.run_if(on_event::<PlayerStateEvent>),
+            update_picked_placeable.run_if(in_player_state(PlayerState::Building)),
+            spawn_or_update_placeable_preview
+                .run_if(on_event::<PlaceablePreviewChangedEvent>.or(on_event::<PlayerStateEvent>)),
+            (
+                on_add_build_preview_component,
+                update_build_preview_material,
+            )
+                .chain(),
+        ),
+    );
+    app.add_systems(PostUpdate, on_remove_build_preview_component);
+}
+
+/// Represents a placeable type
+/// When used on PlayerState represents desired placeable to place
 #[derive(Component, Default, PartialEq, Clone)]
 pub enum Placeable {
     #[default]
@@ -14,28 +39,9 @@ pub enum Placeable {
     Train,
 }
 
-pub fn is_placeable(placeable: Placeable) -> impl FnMut(Query<&Placeable>) -> bool {
-    move |query: Query<&Placeable>| !query.is_empty() && *query.single() == placeable
-}
-
-pub(super) fn placeable_plugin(app: &mut App) {
-    app.add_systems(Startup, load_assets);
-    app.add_plugins(rail_plugin);
-    app.add_plugins(train_plugin);
-
-    app.add_systems(
-        Update,
-        cleanup_build_preview_on_state_change.run_if(on_event::<PlayerStateEvent>),
-    );
-    app.add_systems(
-        Update,
-        (
-            on_add_build_preview_component,
-            update_build_preview_material,
-        )
-            .chain(),
-    );
-    app.add_systems(PostUpdate, on_remove_build_preview_component);
+#[derive(Event)]
+pub struct PlaceablePreviewChangedEvent {
+    new: Placeable,
 }
 
 #[derive(Resource, PartialEq)]
@@ -48,17 +54,17 @@ pub struct PlaceablePreviewMaterial {
 fn load_assets(mut c: Commands, mut materials: ResMut<Assets<StandardMaterial>>) {
     c.insert_resource(PlaceablePreviewMaterial {
         valid: materials.add(StandardMaterial {
-            base_color: Color::srgba(0.2, 1.0, 0.2, 0.5),
+            base_color: Color::srgba(0.2, 1.0, 0.2, 0.8),
             alpha_mode: AlphaMode::Blend,
             ..default()
         }),
         invalid: materials.add(StandardMaterial {
-            base_color: Color::srgba(1.0, 0.2, 0.2, 0.5),
+            base_color: Color::srgba(1.0, 0.2, 0.2, 0.8),
             alpha_mode: AlphaMode::Blend,
             ..default()
         }),
         preview: materials.add(StandardMaterial {
-            base_color: Color::srgba(0.2, 0.2, 1.0, 0.5),
+            base_color: Color::srgba(0.2, 0.2, 1.0, 0.8),
             alpha_mode: AlphaMode::Blend,
             ..default()
         }),
@@ -74,7 +80,7 @@ pub struct PlaceablePreview {
 }
 
 impl PlaceablePreview {
-    fn new(state_instigator: Entity) -> PlaceablePreview {
+    pub fn new(state_instigator: Entity) -> PlaceablePreview {
         PlaceablePreview {
             state_instigator,
             orig_material: MeshMaterial3d::<StandardMaterial>::default(),
@@ -90,6 +96,46 @@ impl Traversal for &PlaceablePreview {
     }
 }
 
+pub fn is_placeable_preview(
+    placeable: Placeable,
+) -> impl FnMut(Query<&Placeable, With<PlayerState>>) -> bool {
+    move |query: Query<&Placeable, With<PlayerState>>| {
+        !query.is_empty() && *query.single() == placeable
+    }
+}
+
+fn spawn_or_update_placeable_preview(
+    mut c: Commands,
+    mut ev: EventReader<PlaceablePreviewChangedEvent>,
+    player_state: Single<(Entity, &Placeable), With<PlayerState>>,
+    previews: Query<Entity, With<PlaceablePreview>>,
+    train: Res<TrainAsset>,
+) {
+    let e_player = player_state.0;
+
+    let spawn = |placeable: &Placeable, c: &mut Commands| match placeable {
+        Placeable::Rail => {}
+        Placeable::Train => {
+            c.spawn((
+                Train,
+                PlaceablePreview::new(e_player),
+                Mesh3d(train.mesh.clone()),
+                MeshMaterial3d(train.material.clone()),
+            ));
+        }
+    };
+
+    if previews.is_empty() {
+        spawn(&player_state.1, &mut c);
+    } else {
+        previews.iter().for_each(|e| c.entity(e).try_despawn());
+
+        for e in ev.read() {
+            spawn(&e.new, &mut c);
+        }
+    }
+}
+
 fn cleanup_build_preview_on_state_change(
     mut c: Commands,
     q: Query<Entity, With<PlaceablePreview>>,
@@ -97,7 +143,7 @@ fn cleanup_build_preview_on_state_change(
 ) {
     {
         for e in event.read() {
-            if e.new_state == PlayerState::Viewing && e.old_state != PlayerState::Viewing {
+            if e.new_state == PlayerState::Viewing && e.old_state == PlayerState::Building {
                 q.into_iter().for_each(|e| {
                     c.entity(e).despawn();
                 });
@@ -118,7 +164,8 @@ fn on_add_build_preview_component(
     >,
 ) {
     q.iter_mut().for_each(|(e, handle, mut preview)| {
-        c.entity(e).insert(NotShadowCaster);
+        c.entity(e)
+            .insert((NotShadowCaster, PickingBehavior::IGNORE));
         preview.orig_material = handle.clone();
     });
 }
@@ -131,6 +178,7 @@ fn on_remove_build_preview_component(
     for entity in removed.read() {
         if let Ok((mut handle, preview)) = q.get_mut(entity) {
             c.entity(entity).remove::<NotShadowCaster>();
+            c.entity(entity).remove::<PickingBehavior>();
             *handle = preview.orig_material.clone();
         }
     }
@@ -146,5 +194,25 @@ fn update_build_preview_material(
         } else if !preview.valid && mat.0 != preview_material.invalid {
             mat.0 = preview_material.invalid.clone();
         };
+    });
+}
+
+fn update_picked_placeable(
+    mut q: Query<(&ActionState<PlayerBuildAction>, &mut Placeable)>,
+    mut ev: EventWriter<PlaceablePreviewChangedEvent>,
+) {
+    q.iter_mut().for_each(|(input, mut placeable)| {
+        let old_placeable = placeable.clone();
+        if input.just_pressed(&PlayerBuildAction::PickRail) {
+            *placeable = Placeable::Rail;
+        }
+        if input.just_pressed(&PlayerBuildAction::PickTrain) {
+            *placeable = Placeable::Train;
+        }
+        if *placeable.bypass_change_detection() != old_placeable {
+            ev.send(PlaceablePreviewChangedEvent {
+                new: placeable.clone(),
+            });
+        }
     });
 }

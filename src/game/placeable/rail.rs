@@ -39,7 +39,7 @@ pub struct RailAsset {
 
 /// Contains the details to build and connect a rail
 #[derive(Component)]
-#[require(Spline, SplineMesh, Name(|| Name::new("Rail")))]
+#[require(Spline, SplineMesh, Placeable(||Placeable::Rail), Name(|| Name::new("Rail")))]
 pub struct Rail {
     pub joints: [RailJoint; 2],
 }
