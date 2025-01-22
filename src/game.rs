@@ -15,16 +15,12 @@ use bevy::{math::*, prelude::*, window::PrimaryWindow};
 use crate::camera::*;
 use crate::input::*;
 use crate::util::*;
-use building::*;
 use placeable::*;
 use player::*;
-use train::*;
 use world::*;
 
-pub mod building;
 pub mod placeable;
 pub mod player;
-pub mod train;
 pub mod world;
 
 /// All game systems and rules
@@ -33,9 +29,8 @@ pub struct GamePlugin;
 
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(building_plugin);
+        app.add_plugins(placeable_plugin);
         app.add_plugins(player_plugin);
-        app.add_plugins(train_plugin);
         app.add_plugins(world_plugin);
 
         app.add_systems(
@@ -134,7 +129,7 @@ fn draw_mesh_intersections(pointers: Query<&PointerInteraction>, mut gizmos: Giz
 }
 
 fn create_building_preview(
-    q: Query<Entity, With<BuildingPreview>>,
+    q: Query<Entity, With<PlaceablePreview>>,
     mut c: Commands,
     mut event: EventReader<PlayerStateEvent>,
 ) {
@@ -148,7 +143,7 @@ fn create_building_preview(
 }
 
 fn snap_building_preview_to_build_pos(
-    mut q: Query<&mut Transform, With<BuildingPreview>>,
+    mut q: Query<&mut Transform, With<PlaceablePreview>>,
     cursor: Query<&PlayerCursor>,
 ) {
     let cursor = cursor.single();
@@ -158,7 +153,7 @@ fn snap_building_preview_to_build_pos(
     });
 }
 
-fn validate_building_preview(mut q: Query<&mut BuildingPreview>) {
+fn validate_building_preview(mut q: Query<&mut PlaceablePreview>) {
     q.iter_mut().for_each(|mut preview| {
         preview.valid = !preview.valid;
     });

@@ -130,7 +130,7 @@ fn create_rail_planner(
 
         c.spawn(plan)
             .insert(spline)
-            .insert(BuildingPreview::new(state_e))
+            .insert(PlaceablePreview::new(state_e))
             .insert(MeshMaterial3d(asset.material.clone()))
             .observe(handle_build_state_cancel_event);
     }
@@ -296,7 +296,7 @@ fn update_rail_planner(
 
 fn update_rail_planner_status(
     feedback: Single<(&mut Text, &mut Node), With<RailPlannerStatusFeedback>>,
-    plan: Query<&RailPlanner>,
+    mut plan: Query<(&RailPlanner, &mut PlaceablePreview)>,
     cursor: Query<&PlayerCursor>,
     input_entries: Res<AllInputContextEntries>,
 ) {
@@ -307,12 +307,17 @@ fn update_rail_planner_status(
     if plan.is_empty() {
         text.0.clear();
     } else {
-        let plan = plan.single();
+        let (plan, mut preview) = plan.single_mut();
         if plan.is_initial_placement() {
             text.0 = "Specifying initial orientation".into();
+            preview.valid = true;
         } else {
+            preview.valid = false;
             text.0 = match plan.status {
-                RailPlannerStatus::Valid => "".into(),
+                RailPlannerStatus::Valid => {
+                    preview.valid = true;
+                    "".into()
+                }
                 RailPlannerStatus::CurveTooSharp(x) => format!(
                     "Curve Too Sharp {:.2} > {:.2}",
                     x.to_degrees(),

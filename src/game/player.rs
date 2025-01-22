@@ -147,7 +147,7 @@ pub struct PlayerStateEvent {
 pub struct BuildStateCancelEvent;
 
 impl Event for BuildStateCancelEvent {
-    type Traversal = &'static BuildingPreview;
+    type Traversal = &'static PlaceablePreview;
     const AUTO_PROPAGATE: bool = true;
 }
 
@@ -207,7 +207,7 @@ fn handle_view_state_input(
 fn handle_build_state_input(
     mut c: Commands,
     q: Query<(Entity, &PlayerCursor, &ActionState<PlayerBuildAction>)>,
-    previews: Query<Entity, With<BuildingPreview>>,
+    previews: Query<Entity, With<PlaceablePreview>>,
     mut cancel_mouse_pos: Local<Vec2>,
 ) {
     let mut trigger = false;

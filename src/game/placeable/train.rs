@@ -1,6 +1,3 @@
-use std::cmp::Ordering;
-
-use bevy_egui::egui::emath::Float;
 use rail::Rail;
 
 use crate::spline::Spline;
