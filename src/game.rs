@@ -16,21 +16,26 @@ use crate::camera::*;
 use crate::input::*;
 use crate::util::*;
 use building::*;
+use placeable::*;
 use player::*;
+use train::*;
 use world::*;
 
 pub mod building;
+pub mod placeable;
 pub mod player;
+pub mod train;
 pub mod world;
 
 /// All game systems and rules
-/// 100 units is 1 meter
+// 100 units is 1 meter
 pub struct GamePlugin;
 
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(build_plugin);
+        app.add_plugins(building_plugin);
         app.add_plugins(player_plugin);
+        app.add_plugins(train_plugin);
         app.add_plugins(world_plugin);
 
         app.add_systems(
@@ -41,7 +46,7 @@ impl Plugin for GamePlugin {
             Update,
             (
                 draw_mesh_intersections,
-                draw_build_grid.run_if(in_player_state(PlayerState::Building)),
+                draw_build_grid.run_if(not(in_player_state(PlayerState::Viewing))),
                 // snap_building_preview_to_build_pos,
                 // validate_building_preview.run_if(on_timer(Duration::from_secs(1))),
                 // process_view_state_input.run_if(in_player_state(PlayerState::Viewing)),
@@ -134,12 +139,7 @@ fn create_building_preview(
     mut event: EventReader<PlayerStateEvent>,
 ) {
     for e in event.read() {
-        if e.new_state == PlayerState::Building && e.old_state == PlayerState::Viewing {
-            // c.add(SpawnRail {
-            //     is_preview: true,
-            //     ..default()
-            // });
-        } else if e.new_state == PlayerState::Viewing && e.old_state == PlayerState::Building {
+        if e.new_state == PlayerState::Viewing && e.old_state != PlayerState::Building {
             q.into_iter().for_each(|e| {
                 c.entity(e).despawn();
             });

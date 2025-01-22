@@ -9,14 +9,14 @@ pub fn rail_planner_plugin(app: &mut App) {
     app.add_systems(Startup, setup_rail_planner_feedback_text);
     app.add_systems(
         Update,
-        ((
+        (
             create_rail_planner,
             update_rail_planner,
             update_rail_planner_status.run_if(any_with_component::<RailPlannerStatusFeedback>),
             draw_rail_planner,
             preview_initial_rail_planner_placement.run_if(not(any_with_component::<RailPlanner>)),
         )
-            .run_if(any_with_component::<InputContext<PlayerBuildAction>>),),
+            .run_if(in_player_state(PlayerState::Building).and(is_placeable(Placeable::Rail))),
     );
 }
 

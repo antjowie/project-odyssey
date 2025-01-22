@@ -5,7 +5,7 @@ use bevy::{ecs::traversal::Traversal, pbr::NotShadowCaster};
 use rail::*;
 pub mod rail;
 
-pub(super) fn build_plugin(app: &mut App) {
+pub(super) fn building_plugin(app: &mut App) {
     app.add_systems(Startup, load_assets);
     app.add_plugins(rail_plugin);
 
@@ -76,21 +76,6 @@ impl Traversal for &BuildingPreview {
     }
 }
 
-/// Returns an observer that updates the entity's material to the one specified.
-/// https://bevyengine.org/examples/picking/mesh-picking/
-pub fn update_material_on<E>(
-    new_material: Handle<StandardMaterial>,
-) -> impl Fn(Trigger<E>, Query<&mut MeshMaterial3d<StandardMaterial>>) {
-    // An observer closure that captures `new_material`. We do this to avoid needing to write four
-    // versions of this observer, each triggered by a different event and with a different hardcoded
-    // material. Instead, the event type is a generic, and the material is passed in.
-    move |trigger, mut query| {
-        if let Ok(mut material) = query.get_mut(trigger.entity()) {
-            material.0 = new_material.clone();
-        }
-    }
-}
-
 fn cleanup_build_preview_on_state_change(
     mut c: Commands,
     q: Query<Entity, With<BuildingPreview>>,
@@ -98,7 +83,7 @@ fn cleanup_build_preview_on_state_change(
 ) {
     {
         for e in event.read() {
-            if e.new_state == PlayerState::Viewing && e.old_state == PlayerState::Building {
+            if e.new_state == PlayerState::Viewing && e.old_state != PlayerState::Viewing {
                 q.into_iter().for_each(|e| {
                     c.entity(e).despawn();
                 });

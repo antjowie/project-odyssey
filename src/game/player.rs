@@ -11,6 +11,7 @@ pub(super) fn player_plugin(app: &mut App) {
             setup_player_state.run_if(any_with_component::<PlayerState>),
             handle_view_state_input.run_if(any_with_component::<ActionState<PlayerViewAction>>),
             handle_build_state_input.run_if(any_with_component::<ActionState<PlayerBuildAction>>),
+            update_picked_placeable.run_if(in_player_state(PlayerState::Building)),
         ),
     );
 }
@@ -39,6 +40,8 @@ impl InputContextlike for PlayerViewAction {
     Actionlike, PartialEq, Eq, Hash, Clone, Copy, Debug, Reflect, PartialOrd, Ord, DisplayDebug,
 )]
 pub enum PlayerBuildAction {
+    PickRail,
+    PickTrain,
     Interact,
     Cancel,
     CancelWithMouse,
@@ -53,6 +56,8 @@ pub enum PlayerBuildAction {
 impl InputContextlike for PlayerBuildAction {
     fn default_input_map() -> InputMap<Self> {
         InputMap::default()
+            .with(PlayerBuildAction::PickRail, KeyCode::Digit1)
+            .with(PlayerBuildAction::PickTrain, KeyCode::Digit2)
             .with(PlayerBuildAction::Interact, MouseButton::Left)
             .with(PlayerBuildAction::Cancel, KeyCode::KeyE)
             .with(PlayerBuildAction::Cancel, KeyCode::Escape)
@@ -82,7 +87,7 @@ impl InputContextlike for PlayerBuildAction {
 }
 
 #[derive(Component, Default, PartialEq, Clone)]
-#[require(PlayerCursor, InputContext<PlayerViewAction>)]
+#[require(PlayerCursor, Placeable, InputContext<PlayerViewAction>)]
 pub enum PlayerState {
     #[default]
     Viewing,
@@ -122,14 +127,14 @@ impl PlayerState {
     }
 }
 
+pub fn in_player_state(state: PlayerState) -> impl FnMut(Query<&PlayerState>) -> bool {
+    move |query: Query<&PlayerState>| !query.is_empty() && *query.single() == state
+}
+
 fn setup_player_state(mut c: Commands, q: Query<Entity, Added<PlayerState>>) {
     q.iter().for_each(|e| {
         c.entity(e).observe(handle_build_state_cancel_event);
     });
-}
-
-pub fn in_player_state(state: PlayerState) -> impl FnMut(Query<&PlayerState>) -> bool {
-    move |query: Query<&PlayerState>| !query.is_empty() && *query.single() == state
 }
 
 #[derive(Event)]
@@ -242,4 +247,15 @@ fn handle_build_state_cancel_event(
     let e = trigger.entity();
     let mut state = q.get_mut(e).unwrap();
     state.set(PlayerState::Viewing, &mut c, e, &mut ev_state);
+}
+
+fn update_picked_placeable(mut q: Query<(&ActionState<PlayerBuildAction>, &mut Placeable)>) {
+    q.iter_mut().for_each(|(input, mut placeable)| {
+        if input.just_pressed(&PlayerBuildAction::PickRail) {
+            *placeable = Placeable::Rail;
+        }
+        if input.just_pressed(&PlayerBuildAction::PickTrain) {
+            *placeable = Placeable::Train;
+        }
+    });
 }

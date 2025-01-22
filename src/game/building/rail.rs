@@ -19,7 +19,10 @@ pub(super) fn rail_plugin(app: &mut App) {
         rail_planner::rail_planner_plugin,
     ));
     app.add_systems(Startup, load_rail_asset);
-    app.add_systems(Update, (debug_rail_path, debug_rail_intersections));
+    app.add_systems(
+        Update,
+        (debug_rail_path, debug_rail_intersections).run_if(in_player_state(PlayerState::Building)),
+    );
     app.init_resource::<RailIntersections>();
 }
 

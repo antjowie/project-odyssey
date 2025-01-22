@@ -107,15 +107,12 @@ fn update_spline_mesh(
     mut gizmos: Gizmos,
 ) {
     for (entity, mut mesh, spline, mut spline_mesh) in &mut q {
-        let entity = c.get_entity(entity);
-        if entity.is_none()
-            || spline.controls[0].pos == spline.controls[1].pos
+        if spline.controls[0].pos == spline.controls[1].pos
             || spline_mesh.source_spline_data == *spline
         {
             continue;
         }
 
-        let mut ec = entity.unwrap();
         spline_mesh.source_spline_data = spline.clone();
 
         let mesh = match meshes.get_mut(mesh.id()) {
@@ -179,8 +176,7 @@ fn update_spline_mesh(
             );
         }
 
-        info!("points {} indices {}", points.len(), indices.len());
-
+        // info!("points {} indices {}", points.len(), indices.len());
         // info!(
         //     "points{}\nvertices{} {:?}\nindices{} {:?}",
         //     points.len(),
@@ -191,7 +187,11 @@ fn update_spline_mesh(
         // );
 
         mesh.insert_indices(Indices::U16(indices));
-        ec.insert(mesh.compute_aabb().unwrap());
+
+        // At this moment check if our entity still exists, otherwise we just drop it
+        if let Some(mut ec) = c.get_entity(entity) {
+            ec.try_insert(mesh.compute_aabb().unwrap());
+        }
     }
 }
 
