@@ -18,7 +18,7 @@ pub(super) fn placeable_plugin(app: &mut App) {
         (
             cleanup_build_preview_on_state_change.run_if(on_event::<PlayerStateEvent>),
             update_picked_placeable.run_if(in_player_state(PlayerState::Building)),
-            spawn_or_update_placeable_preview
+            create_or_update_placeable_preview
                 .run_if(on_event::<PlaceablePreviewChangedEvent>.or(on_event::<PlayerStateEvent>)),
             (
                 on_add_build_preview_component,
@@ -104,7 +104,7 @@ pub fn is_placeable_preview(
     }
 }
 
-fn spawn_or_update_placeable_preview(
+fn create_or_update_placeable_preview(
     mut c: Commands,
     mut ev: EventReader<PlaceablePreviewChangedEvent>,
     player_state: Single<(Entity, &Placeable), With<PlayerState>>,

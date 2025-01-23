@@ -242,11 +242,11 @@ impl RailIntersection {
 fn load_rail_asset(mut c: Commands, mut materials: ResMut<Assets<StandardMaterial>>) {
     c.insert_resource(RailAsset {
         material: materials.add(StandardMaterial {
-            base_color: Color::srgb(0.5, 0.5, 0.5),
+            base_color: Color::srgb(0.3, 0.3, 0.3),
             ..default()
         }),
         hover_material: materials.add(StandardMaterial {
-            base_color: Color::srgba(0.1, 0.1, 0.5, 0.5),
+            base_color: Color::srgb(0.1, 0.1, 0.5),
             ..default()
         }),
     });

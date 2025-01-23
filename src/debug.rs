@@ -10,6 +10,7 @@ pub struct DebugPlugin;
 impl Plugin for DebugPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(DefaultInspectorConfigPlugin);
+        // app.add_plugins(avian3d::prelude::PhysicsDebugPlugin::default());
         app.add_systems(
             Update,
             inspector_ui.run_if(input_toggle_active(false, KeyCode::Delete)),

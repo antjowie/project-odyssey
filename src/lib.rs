@@ -1,4 +1,5 @@
 //! Entrypoint of the app
+use avian3d::prelude::*;
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 
@@ -25,6 +26,7 @@ impl Plugin for AppPlugin {
                     ..default()
                 },
             ),
+            PhysicsPlugins::default(),
             EguiPlugin,
             MeshPickingPlugin,
             camera::CameraPlugin,

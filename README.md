@@ -19,7 +19,7 @@ Rail editor
 - [ ] Add copy pasta? 
 
 Train
-- [ ] Support placing and creating different things on rails
+- [x] Support placing and creating different things on rails
 - [ ] Add train
 - [ ] Add stations
 - [ ] Support specifying stations for trains

@@ -1,3 +1,4 @@
+use avian3d::prelude::*;
 use rail::Rail;
 
 use super::*;
@@ -7,7 +8,7 @@ pub(super) fn train_plugin(app: &mut App) {
     app.add_systems(Startup, load_train_asset);
     app.add_systems(
         Update,
-        preview_train_placement.run_if(
+        handle_train_placement.run_if(
             in_player_state(PlayerState::Building).and(is_placeable_preview(Placeable::Train)),
         ),
     );
@@ -20,6 +21,7 @@ pub struct Train;
 #[derive(Resource)]
 pub struct TrainAsset {
     pub mesh: Handle<Mesh>,
+    pub collider: Collider,
     pub material: Handle<StandardMaterial>,
 }
 
@@ -28,22 +30,22 @@ fn load_train_asset(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    let mesh = meshes.add(Tetrahedron::new(
+        vec3(0.0, 2.0, 2.0),
+        vec3(-2.0, 0.0, 2.0),
+        vec3(2.0, 0.0, 2.0),
+        vec3(0.0, 0.0, -2.0),
+    ));
     c.insert_resource(TrainAsset {
-        mesh: meshes.add(Tetrahedron::new(
-            vec3(0.0, 2.0, 2.0),
-            vec3(-2.0, 0.0, 2.0),
-            vec3(2.0, 0.0, 2.0),
-            vec3(0.0, 0.0, -2.0),
-        )),
-        // mesh: meshes.add(Extrusion::new(
-        //     Triangle2d::new(Vec2::new(-0.5, 1.), Vec2::new(0.5, 1.), Vec2::new(0., -1.)),
-        //     1.,
-        // )),
-        material: materials.add(Color::BLACK),
+        collider: Collider::convex_hull_from_mesh(&meshes.get(&mesh).unwrap()).unwrap(),
+        mesh,
+        // https://www.designpieces.com/palette/ns-color-palette-hex-and-rgb/
+        material: materials.add(Color::srgb_u8(255, 198, 30)),
     });
 }
 
-fn preview_train_placement(
+fn handle_train_placement(
+    mut c: Commands,
     mut q: Query<(&mut PlayerCursor, &ActionState<PlayerBuildAction>)>,
     mut preview: Query<(&mut Transform, &mut PlaceablePreview), With<Train>>,
     cameras: Query<(&Camera, &Transform), Without<Train>>,
@@ -52,6 +54,8 @@ fn preview_train_placement(
     mut ray_cast: MeshRayCast,
     mut previous_had_hit: Local<bool>,
     mut align_to_right: Local<bool>,
+    train: Res<TrainAsset>,
+    spatial_query: SpatialQuery,
 ) {
     if preview.is_empty() {
         return;
@@ -116,9 +120,32 @@ fn preview_train_placement(
 
         *previous_had_hit = false;
     }
-    preview.1.valid = *previous_had_hit;
+
     cursor.manual_rotation = 0.0;
     preview.0.translation = pos;
     preview.0.look_at(pos + forward.as_vec3(), Vec3::Y);
-    // gizmos.sphere(Isometry3d::from_translation(pos), 10., Color::WHITE);
+
+    // Overlap check
+    let can_place = *previous_had_hit
+        && spatial_query
+            .shape_intersections(
+                &train.collider,
+                preview.0.translation,
+                preview.0.rotation,
+                &SpatialQueryFilter::default(),
+            )
+            .len()
+            == 0;
+
+    preview.1.valid = can_place;
+
+    if can_place && input.just_pressed(&PlayerBuildAction::Interact) {
+        c.spawn((
+            Train,
+            preview.0.clone(),
+            Mesh3d(train.mesh.clone()),
+            MeshMaterial3d(train.material.clone()),
+            train.collider.clone(),
+        ));
+    }
 }
