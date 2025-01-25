@@ -8,8 +8,7 @@
 
 use std::f32::consts::PI;
 
-use bevy::color::palettes::tailwind::*;
-use bevy::picking::pointer::PointerInteraction;
+use bevy::{color::palettes::tailwind::*, picking::pointer::PointerInteraction};
 use bevy::{math::*, prelude::*, window::PrimaryWindow};
 
 use crate::camera::*;
@@ -34,10 +33,6 @@ impl Plugin for GamePlugin {
         app.add_plugins(world_plugin);
 
         app.add_systems(
-            PreUpdate,
-            update_cursor.in_set(InputManagerSystem::ManualControl),
-        );
-        app.add_systems(
             Update,
             (
                 draw_mesh_intersections,
@@ -46,69 +41,6 @@ impl Plugin for GamePlugin {
         );
         app.register_type::<PlayerCursor>();
     }
-}
-
-fn update_cursor(
-    windows: Query<&Window, With<PrimaryWindow>>,
-    cameras: Query<(&PanOrbitCamera, &Camera, &GlobalTransform)>,
-    mut q: Query<(&mut PlayerCursor, Option<&ActionState<PlayerBuildAction>>)>,
-    time: Res<Time>,
-) {
-    let window = windows.single();
-    let (pan_cam, camera, global_transform) = cameras.iter().find(|(_, c, _)| c.is_active).unwrap();
-    let (mut cursor, input) = q.single_mut();
-
-    // Check if cursor is in window
-    cursor.prev_world_pos = cursor.world_pos;
-    cursor.screen_pos = window.cursor_position();
-    if let Some(ray) = cursor
-        .screen_pos
-        .and_then(|pos| camera.viewport_to_world(global_transform, pos).ok())
-    {
-        // Check if cursor intersects ground
-        if let Some(len) = ray.intersect_plane(Vec3::ZERO, InfinitePlane3d::new(Vec3::Y)) {
-            cursor.world_pos = ray.origin + ray.direction * len;
-            // gizmos.sphere(cursor.position, Quat::IDENTITY, 10.0, RED);
-        }
-    } else {
-        // Set these values to camera center, in case we do gamepad implementation
-        cursor.world_pos = pan_cam.center;
-    }
-    cursor.world_grid_pos = cursor.world_pos.round();
-
-    if let Some(input) = input {
-        if input.just_pressed(&PlayerBuildAction::ToggleSnapToGrid) {
-            cursor.should_snap_to_grid = !cursor.should_snap_to_grid;
-        }
-
-        if input.pressed(&PlayerBuildAction::Rotate) {
-            cursor.manual_rotation -= PI * 0.5 * time.delta_secs();
-        }
-        if input.pressed(&PlayerBuildAction::CounterRotate) {
-            cursor.manual_rotation += PI * 0.5 * time.delta_secs();
-        }
-
-        const SNAP_ROT: f32 = PI * 0.5;
-        if input.just_pressed(&PlayerBuildAction::SnapRotate) {
-            cursor.manual_rotation =
-                (cursor.manual_rotation / SNAP_ROT).round() * SNAP_ROT - SNAP_ROT;
-        }
-        if input.just_pressed(&PlayerBuildAction::SnapCounterRotate) {
-            cursor.manual_rotation =
-                (cursor.manual_rotation / SNAP_ROT).round() * SNAP_ROT + SNAP_ROT;
-        }
-
-        if input.just_pressed(&PlayerBuildAction::CycleCurveMode) {
-            cursor.curve_mode = cursor.curve_mode.next();
-            cursor.manual_rotation = 0.;
-        }
-    }
-
-    cursor.build_pos = if cursor.should_snap_to_grid {
-        cursor.world_grid_pos
-    } else {
-        cursor.world_pos
-    };
 }
 
 /// https://bevyengine.org/examples/picking/mesh-picking/

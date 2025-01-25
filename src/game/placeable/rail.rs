@@ -51,15 +51,15 @@ impl Rail {
         plan: &RailPlanner,
         spline: &Spline,
     ) -> Rail {
-        let start = spline.controls[0].pos;
-        let end = spline.controls[1].pos;
+        let start = spline.controls()[0].pos;
+        let end = spline.controls()[1].pos;
 
         let start_intersection_id = plan.start_intersection_id.unwrap_or_else(|| {
-            intersections.create_new_intersection(start, spline.controls[0].forward)
+            intersections.create_new_intersection(start, spline.controls()[0].forward)
         });
 
         let end_intersection_id = plan.end_intersection_id.unwrap_or_else(|| {
-            intersections.create_new_intersection(end, -spline.controls[1].forward)
+            intersections.create_new_intersection(end, -spline.controls()[1].forward)
         });
 
         let self_state = Rail {
@@ -91,7 +91,7 @@ impl Rail {
 
         connect_intersection(
             self_entity,
-            &spline.controls[0].forward,
+            &spline.controls()[0].forward,
             &mut start_intersection,
         );
 
@@ -101,11 +101,41 @@ impl Rail {
             .unwrap();
         connect_intersection(
             self_entity,
-            &spline.controls[1].forward,
+            &spline.controls()[1].forward,
             &mut end_intersection,
         );
 
         self_state
+    }
+
+    pub fn insert_intersection(
+        &mut self,
+        pos: &Vec3,
+        spline: &mut Spline,
+        c: &mut Commands,
+        intersections: &mut ResMut<RailIntersections>,
+    ) {
+        // Generate 2 splines based on t
+        // https://pomax.github.io/bezierinfo/#splitting
+        // let curve = spline.create_curve();
+        // let t =
+
+        // left=[]
+        // right=[]
+        // function drawCurvePoint(points[], t):
+        // if(points.length==1):
+        //     left.add(points[0])
+        //     right.add(points[0])
+        //     draw(points[0])
+        // else:
+        //     newpoints=array(points.size-1)
+        //     for(i=0; i<newpoints.length; i++):
+        //     if(i==0):
+        //         left.add(points[i])
+        //     if(i==newpoints.length-1):
+        //         right.add(points[i+1])
+        //     newpoints[i] = (1-t) * points[i] + t * points[i+1]
+        // drawCurvePoint(newpoints, t)
     }
 }
 
@@ -207,9 +237,9 @@ impl RailIntersection {
                 let (rail, spline) = rails.get(*e).unwrap();
 
                 let (start, end) = if rail.joints[0].intersection_id == intersection_id {
-                    (spline.controls[0].pos, spline.controls[1].pos)
+                    (spline.controls()[0].pos, spline.controls()[1].pos)
                 } else {
-                    (spline.controls[1].pos, spline.controls[0].pos)
+                    (spline.controls()[1].pos, spline.controls()[0].pos)
                 };
 
                 let rail_dir = (end - start).normalize();
@@ -263,13 +293,13 @@ fn debug_rail_path(mut gizmos: Gizmos, q: Query<&Spline, With<Rail>>) {
 
         // Draw forwards
         gizmos.line(
-            spline.controls[0].pos,
-            spline.controls[0].pos + spline.controls[0].forward,
+            spline.controls()[0].pos,
+            spline.controls()[0].pos + spline.controls()[0].forward,
             Color::srgb(1.0, 0.1, 0.1),
         );
         gizmos.line(
-            spline.controls[0].pos,
-            spline.controls[0].pos + spline.controls[0].forward,
+            spline.controls()[0].pos,
+            spline.controls()[0].pos + spline.controls()[0].forward,
             Color::srgb(0.1, 0.1, 1.0),
         );
     });
@@ -291,8 +321,8 @@ fn debug_rail_intersections(
         if let Some(e) = e {
             let spline = q.get(*e);
             if let Ok(spline) = spline {
-                let start = spline.controls[0].pos;
-                let end = spline.controls[1].pos;
+                let start = spline.controls()[0].pos;
+                let end = spline.controls()[1].pos;
                 Some((start, end))
             } else {
                 None

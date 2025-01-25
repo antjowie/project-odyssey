@@ -6,6 +6,10 @@ pub(super) fn player_plugin(app: &mut App) {
     app.add_plugins(InputContextPlugin::<PlayerBuildAction>::default());
     app.add_event::<PlayerStateEvent>();
     app.add_systems(
+        PreUpdate,
+        update_cursor.in_set(InputManagerSystem::ManualControl),
+    );
+    app.add_systems(
         Update,
         (
             setup_player_state.run_if(any_with_component::<PlayerState>),
@@ -155,18 +159,34 @@ impl Event for BuildStateCancelEvent {
 }
 
 /// Component that tracks the cursor position
-#[derive(Component, Default, Reflect)]
+#[derive(Component, Reflect)]
 pub struct PlayerCursor {
     pub screen_pos: Option<Vec2>,
     pub should_snap_to_grid: bool,
-    // Cached build rotation
+    /// Cached build rotation
     pub manual_rotation: f32,
     pub curve_mode: PathCurveMode,
-    // Can be world or grid pos based on user desire
+    /// Can be world or grid pos based on user desire
     pub build_pos: Vec3,
     pub world_pos: Vec3,
-    pub prev_world_pos: Vec3,
     pub world_grid_pos: Vec3,
+    /// Represents the cursor ray from camera, can be used for picking
+    pub ray: Ray3d,
+}
+
+impl Default for PlayerCursor {
+    fn default() -> Self {
+        Self {
+            ray: Ray3d::new(Vec3::ZERO, Dir3::new(Vec3::NEG_Z).unwrap()),
+            screen_pos: default(),
+            should_snap_to_grid: default(),
+            manual_rotation: default(),
+            curve_mode: default(),
+            build_pos: default(),
+            world_pos: default(),
+            world_grid_pos: default(),
+        }
+    }
 }
 
 #[derive(Default, Reflect, PartialEq, Debug, DisplayDebug)]
@@ -188,6 +208,76 @@ impl PathCurveMode {
             PathCurveMode::Chase => PathCurveMode::Curve,
         }
     }
+}
+
+fn update_cursor(
+    windows: Query<&Window, With<PrimaryWindow>>,
+    cameras: Query<(&PanOrbitCamera, &Camera, &GlobalTransform)>,
+    mut q: Query<(&mut PlayerCursor, Option<&ActionState<PlayerBuildAction>>)>,
+    time: Res<Time>,
+) {
+    let window = windows.single();
+    let (pan_cam, camera, global_transform) = cameras.iter().find(|(_, c, _)| c.is_active).unwrap();
+    let (mut cursor, input) = q.single_mut();
+
+    // Check if cursor is in window
+    cursor.screen_pos = window.cursor_position();
+
+    cursor.ray = camera
+        .viewport_to_world(
+            global_transform,
+            cursor.screen_pos.unwrap_or(window.size() * 0.5),
+        )
+        .unwrap();
+
+    if let Some(ray) = cursor
+        .screen_pos
+        .and_then(|pos| camera.viewport_to_world(global_transform, pos).ok())
+    {
+        // Check if cursor intersects ground
+        if let Some(len) = ray.intersect_plane(Vec3::ZERO, InfinitePlane3d::new(Vec3::Y)) {
+            cursor.world_pos = ray.origin + ray.direction * len;
+            // gizmos.sphere(cursor.position, Quat::IDENTITY, 10.0, RED);
+        }
+    } else {
+        // Set these values to camera center, in case we do gamepad implementation
+        cursor.world_pos = pan_cam.center;
+    }
+    cursor.world_grid_pos = cursor.world_pos.round();
+
+    if let Some(input) = input {
+        if input.just_pressed(&PlayerBuildAction::ToggleSnapToGrid) {
+            cursor.should_snap_to_grid = !cursor.should_snap_to_grid;
+        }
+
+        if input.pressed(&PlayerBuildAction::Rotate) {
+            cursor.manual_rotation -= PI * 0.5 * time.delta_secs();
+        }
+        if input.pressed(&PlayerBuildAction::CounterRotate) {
+            cursor.manual_rotation += PI * 0.5 * time.delta_secs();
+        }
+
+        const SNAP_ROT: f32 = PI * 0.5;
+        if input.just_pressed(&PlayerBuildAction::SnapRotate) {
+            cursor.manual_rotation =
+                (cursor.manual_rotation / SNAP_ROT).round() * SNAP_ROT - SNAP_ROT;
+        }
+        if input.just_pressed(&PlayerBuildAction::SnapCounterRotate) {
+            cursor.manual_rotation =
+                (cursor.manual_rotation / SNAP_ROT).round() * SNAP_ROT + SNAP_ROT;
+        }
+
+        if input.just_pressed(&PlayerBuildAction::CycleCurveMode) {
+            cursor.curve_mode = cursor.curve_mode.next();
+            cursor.manual_rotation = 0.;
+        }
+    }
+
+    cursor.build_pos = if cursor.should_snap_to_grid {
+        cursor.world_grid_pos
+    } else {
+        cursor.world_pos
+    };
 }
 
 fn handle_view_state_input(

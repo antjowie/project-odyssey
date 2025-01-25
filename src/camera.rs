@@ -124,6 +124,7 @@ fn update_pan_orbit_camera(
     cursors: Query<&PlayerCursor>,
     time: Res<Time>,
     mut last_pan_offset: Local<Vec3>,
+    mut prev_world_pos: Local<Vec3>,
 ) {
     let player_cursor = cursors.single();
 
@@ -181,8 +182,12 @@ fn update_pan_orbit_camera(
 
             // Handle pan
             let mut pan = Vec3::ZERO;
+            if input.just_pressed(&CameraAction::Pan) {
+                *prev_world_pos = player_cursor.world_pos;
+            }
             if input.pressed(&CameraAction::Pan) {
-                let offset = player_cursor.world_pos.xz() - player_cursor.prev_world_pos.xz();
+                let offset = player_cursor.world_pos.xz() - prev_world_pos.xz();
+                *prev_world_pos = player_cursor.world_pos;
 
                 pan.x = offset.x;
                 pan.z = offset.y;
