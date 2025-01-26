@@ -47,10 +47,11 @@ pub struct Rail {
 
 impl Rail {
     fn new(
-        self_entity: Entity,
+        self_entity: &mut EntityCommands,
         intersections: &mut ResMut<RailIntersections>,
         plan: &RailPlanner,
         spline: &Spline,
+        rail_asset: &RailAsset,
     ) -> Rail {
         let start = spline.controls()[0].pos;
         let end = spline.controls()[1].pos;
@@ -91,7 +92,7 @@ impl Rail {
             .unwrap();
 
         connect_intersection(
-            self_entity,
+            self_entity.id(),
             &spline.controls()[0].forward,
             &mut start_intersection,
         );
@@ -101,10 +102,19 @@ impl Rail {
             .get_mut(&end_intersection_id)
             .unwrap();
         connect_intersection(
-            self_entity,
+            self_entity.id(),
             &spline.controls()[1].forward,
             &mut end_intersection,
         );
+
+        self_entity
+            .observe(update_material_on::<Pointer<Over>>(
+                rail_asset.hover_material.clone(),
+            ))
+            .observe(update_material_on::<Pointer<Out>>(
+                rail_asset.material.clone(),
+            ))
+            .insert(MeshMaterial3d(rail_asset.material.clone()));
 
         self_state
     }
@@ -180,23 +190,13 @@ impl Rail {
             ..default_plan
         };
         let start_rail = Rail::new(
-            start_entity.id(),
+            &mut start_entity,
             &mut intersections,
             &start_plan,
             &start_spline,
+            &rail_asset,
         );
-        start_entity
-            .insert((
-                MeshMaterial3d(rail_asset.material.clone()),
-                start_rail,
-                start_spline,
-            ))
-            .observe(update_material_on::<Pointer<Over>>(
-                rail_asset.hover_material.clone(),
-            ))
-            .observe(update_material_on::<Pointer<Out>>(
-                rail_asset.material.clone(),
-            ));
+        start_entity.insert((start_rail, start_spline));
 
         // Split end
         let mut end_entity = c.spawn_empty();
@@ -205,19 +205,14 @@ impl Rail {
             end_intersection_id: Some(self.joints[1].intersection_id),
             ..default_plan
         };
-        let end_rail = Rail::new(end_entity.id(), &mut intersections, &end_plan, &end_spline);
-        end_entity
-            .insert((
-                MeshMaterial3d(rail_asset.material.clone()),
-                end_rail,
-                end_spline,
-            ))
-            .observe(update_material_on::<Pointer<Over>>(
-                rail_asset.hover_material.clone(),
-            ))
-            .observe(update_material_on::<Pointer<Out>>(
-                rail_asset.material.clone(),
-            ));
+        let end_rail = Rail::new(
+            &mut end_entity,
+            &mut intersections,
+            &end_plan,
+            &end_spline,
+            &rail_asset,
+        );
+        end_entity.insert((end_rail, end_spline));
 
         self.destroy(self_entity, &mut c, &mut intersections);
     }

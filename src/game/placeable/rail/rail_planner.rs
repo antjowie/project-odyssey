@@ -374,21 +374,12 @@ fn update_rail_planner(
             {
                 // Create the rail
                 let mut ec = c.spawn_empty();
-                let rail = Rail::new(ec.id(), &mut intersections, &plan, &spline);
-
-                ec.insert(spline.clone())
-                    .insert(MeshMaterial3d(asset.material.clone()))
-                    .observe(update_material_on::<Pointer<Over>>(
-                        asset.hover_material.clone(),
-                    ))
-                    .observe(update_material_on::<Pointer<Out>>(asset.material.clone()));
-                // .observe(update_material_on::<Pointer<Down>>(pressed_matl.clone()))
-                // .observe(update_material_on::<Pointer<Up>>(hover_matl.clone()));
+                let rail = Rail::new(&mut ec, &mut intersections, &plan, &spline, &asset);
 
                 // Rail is inserted at the end because it moves rail, which is still used
                 let start_intersection_id = rail.joints[0].intersection_id;
                 let end_intersection_id = rail.joints[1].intersection_id;
-                ec.insert(rail);
+                ec.insert((rail, spline.clone()));
 
                 // If required, split other rails
                 if let Some(start) = plan.start_rail {

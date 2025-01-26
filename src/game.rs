@@ -55,8 +55,8 @@ fn draw_mesh_intersections(pointers: Query<&PointerInteraction>, mut gizmos: Giz
     }
 }
 
-fn draw_build_grid(mut gizmos: Gizmos, q: Query<&PlayerCursor>) {
-    let cursor = q.single();
+fn draw_build_grid(mut gizmos: Gizmos, player: Single<(&PlayerCursor, &Placeable)>) {
+    let (cursor, placeable) = player.into_inner();
 
     gizmos.grid(
         Isometry3d {
@@ -65,6 +65,10 @@ fn draw_build_grid(mut gizmos: Gizmos, q: Query<&PlayerCursor>) {
         },
         UVec2::splat(16),
         Vec2::splat(1.0),
-        Color::srgba(0.8, 0.8, 0.8, 0.3),
+        if placeable == &Placeable::Destroyer {
+            Color::srgba(0.8, 0.3, 0.3, 0.3)
+        } else {
+            Color::srgba(0.8, 0.8, 0.8, 0.3)
+        },
     );
 }

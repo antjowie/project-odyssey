@@ -25,6 +25,7 @@ pub(super) fn player_plugin(app: &mut App) {
 pub enum PlayerViewAction {
     PickRail,
     PickTrain,
+    PickDestroy,
     EnterBuildMode,
     ExitGame,
 }
@@ -34,6 +35,7 @@ impl InputContextlike for PlayerViewAction {
         InputMap::default()
             .with(PlayerViewAction::PickRail, KeyCode::Digit1)
             .with(PlayerViewAction::PickTrain, KeyCode::Digit2)
+            .with(PlayerViewAction::PickDestroy, KeyCode::KeyX)
             .with(PlayerViewAction::EnterBuildMode, MouseButton::Left)
             .with(PlayerViewAction::ExitGame, KeyCode::Escape)
     }
@@ -49,6 +51,7 @@ impl InputContextlike for PlayerViewAction {
 pub enum PlayerBuildAction {
     PickRail,
     PickTrain,
+    PickDestroy,
     Interact,
     Cancel,
     CancelWithMouse,
@@ -65,6 +68,7 @@ impl InputContextlike for PlayerBuildAction {
         InputMap::default()
             .with(PlayerBuildAction::PickRail, KeyCode::Digit1)
             .with(PlayerBuildAction::PickTrain, KeyCode::Digit2)
+            .with(PlayerBuildAction::PickDestroy, KeyCode::KeyX)
             .with(PlayerBuildAction::Interact, MouseButton::Left)
             .with(PlayerBuildAction::Cancel, KeyCode::KeyE)
             .with(PlayerBuildAction::Cancel, KeyCode::Escape)
@@ -300,6 +304,11 @@ fn handle_view_state_input(
 
             if input.just_pressed(&PlayerViewAction::PickTrain) {
                 *placeable = Placeable::Train;
+                state.set(PlayerState::Building, &mut c, e, &mut ev_state);
+            }
+
+            if input.just_pressed(&PlayerViewAction::PickDestroy) {
+                *placeable = Placeable::Destroyer;
                 state.set(PlayerState::Building, &mut c, e, &mut ev_state);
             }
 

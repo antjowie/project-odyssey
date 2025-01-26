@@ -2,13 +2,16 @@
 use super::*;
 use bevy::{ecs::traversal::Traversal, pbr::NotShadowCaster};
 
+use destroyer::*;
 use rail::*;
 use train::*;
+pub mod destroyer;
 pub mod rail;
 pub mod train;
 
 pub(super) fn placeable_plugin(app: &mut App) {
     app.add_systems(Startup, load_assets);
+    app.add_plugins(destroyer_plugin);
     app.add_plugins(rail_plugin);
     app.add_plugins(train_plugin);
     app.add_event::<PlaceablePreviewChangedEvent>();
@@ -37,6 +40,9 @@ pub enum Placeable {
     #[default]
     Rail,
     Train,
+
+    /// A special case, when this intention is selected whatever we click on gets removed
+    Destroyer,
 }
 
 #[derive(Event)]
@@ -123,6 +129,7 @@ fn create_or_update_placeable_preview(
                 MeshMaterial3d(train.material.clone()),
             ));
         }
+        Placeable::Destroyer => {}
     };
 
     if previews.is_empty() {
@@ -208,6 +215,9 @@ fn update_picked_placeable(
         }
         if input.just_pressed(&PlayerBuildAction::PickTrain) {
             *placeable = Placeable::Train;
+        }
+        if input.just_pressed(&PlayerBuildAction::PickDestroy) {
+            *placeable = Placeable::Destroyer;
         }
         if *placeable.bypass_change_detection() != old_placeable {
             ev.send(PlaceablePreviewChangedEvent {
