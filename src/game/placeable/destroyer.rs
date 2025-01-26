@@ -31,6 +31,10 @@ fn load_destroyer_asset(mut c: Commands, mut materials: ResMut<Assets<StandardMa
     });
 }
 
+pub fn on_destroy_default(trigger: Trigger<DestroyEvent>, mut c: Commands) {
+    c.entity(trigger.entity()).despawn();
+}
+
 fn handle_destroyer(
     mut c: Commands,
     mut q: ParamSet<(

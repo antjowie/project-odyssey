@@ -118,6 +118,7 @@ fn handle_train_placement(
             Mesh3d(train.mesh.clone()),
             MeshMaterial3d(train.material.clone()),
             train.collider.clone(),
-        ));
+        ))
+        .observe(on_destroy_default);
     }
 }

@@ -11,7 +11,8 @@ Rail editor
 - [x] Reintroduce snapping to end_intersection if one is hovered
 - [x] Generate procedural mesh from spline
 - [x] Gen collider for curve
-- [ ] Add segment deconstruction
+- [x] Add segment deconstruction
+- [ ] Add intersection deconstruction
 - [x] Improve joint expansion to intersection instead of seperate joints
 - [x] Extend rail arbitrary from segment
 - [ ] Add vertical rail building

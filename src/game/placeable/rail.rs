@@ -114,6 +114,7 @@ impl Rail {
             .observe(update_material_on::<Pointer<Out>>(
                 rail_asset.material.clone(),
             ))
+            .observe(on_rail_destroy)
             .insert(MeshMaterial3d(rail_asset.material.clone()));
 
         self_state
@@ -147,6 +148,7 @@ impl Rail {
                 .find(|e| e.is_some())
                 .is_none()
             {
+                intersections.intersections.remove(&intersection_id);
                 intersections.id_provider.return_id(intersection_id);
             } else {
                 intersection.left.sort_by(|a, b| b.cmp(a));
@@ -359,6 +361,17 @@ impl RailIntersection {
             -self.right_forward
         }
     }
+}
+
+fn on_rail_destroy(
+    trigger: Trigger<DestroyEvent>,
+    mut q: Query<&mut Rail>,
+    mut c: Commands,
+    mut intersections: ResMut<RailIntersections>,
+) {
+    q.get_mut(trigger.entity())
+        .unwrap()
+        .destroy(trigger.entity(), &mut c, &mut intersections);
 }
 
 fn load_rail_asset(mut c: Commands, mut materials: ResMut<Assets<StandardMaterial>>) {
