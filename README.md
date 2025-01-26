@@ -13,15 +13,23 @@ Rail editor
 - [x] Gen collider for curve
 - [x] Add segment deconstruction
 - [ ] Add intersection deconstruction
+  - I don't think this is possible with current systems, as too many edge cases
+  - are introduced. Current system relies directly on splines, but it might be
+  - better to think of a "preset matching" system next time, so we can easily
+  - move things around. 
+  - Issue is that a rail is assumed to be 1 curve, so removing an intersection
+  - means we need to merge 2 curves, we could then split this joined curve 75%
+  - through, which brings us in all kinds of weird situations.
 - [x] Improve joint expansion to intersection instead of seperate joints
-- [x] Extend rail arbitrary from segment
+- [x] Insert rail into arbitrary area of rail
+- [ ] Expand rail from arbitrary area of rail
 - [ ] Add vertical rail building
-  - [ ] Add proper raycasting
+  - [x] Add proper raycasting
 - [ ] Add copy pasta? 
 
 Train
 - [x] Support placing and creating different things on rails
-- [ ] Add train
+- [x] Add train and have them drive
 - [ ] Add stations
 - [ ] Support specifying stations for trains
 - [ ] Support train moving along a planned route

@@ -1,5 +1,7 @@
 use avian3d::prelude::*;
+use bevy_rand::{global::GlobalEntropy, prelude::*};
 use rail::Rail;
+use rand_core::RngCore;
 
 use super::*;
 use crate::spline::Spline;
@@ -8,15 +10,93 @@ pub(super) fn train_plugin(app: &mut App) {
     app.add_systems(Startup, load_train_asset);
     app.add_systems(
         Update,
-        handle_train_placement.run_if(
-            in_player_state(PlayerState::Building).and(is_placeable_preview(Placeable::Train)),
+        (
+            handle_train_placement.run_if(
+                in_player_state(PlayerState::Building).and(is_placeable_preview(Placeable::Train)),
+            ),
+            traverse,
         ),
     );
 }
 
 #[derive(Component)]
 #[require(Placeable(||Placeable::Train), Name(|| Name::new("Train")))]
-pub struct Train;
+pub struct Train {
+    /// The alpha on the current rail the train is traversing
+    pub t: f32,
+    pub rail: Entity,
+}
+
+impl Train {
+    pub fn traverse(
+        &self,
+        distance: f32,
+        t: f32,
+        forward: Dir3,
+        rail_id: Entity,
+        rail: &Rail,
+        spline: &Spline,
+        rails: &Query<(&Rail, &Spline)>,
+        intersections: &RailIntersections,
+        rng: &mut GlobalEntropy<WyRand>,
+    ) -> TrainTraverseResult {
+        match rail.traverse(t, &forward, distance, spline) {
+            TraverseResult::Intersection {
+                t,
+                pos,
+                forward,
+                remaining_distance,
+                intersection_id,
+            } => {
+                let intersection = intersections.intersections.get(&intersection_id).unwrap();
+                let options = intersection.get_curve_options(&forward);
+                if options.is_empty() {
+                    // For now we'll just flip the train
+                    self.traverse(
+                        remaining_distance,
+                        t,
+                        -forward,
+                        rail_id,
+                        rail,
+                        spline,
+                        rails,
+                        intersections,
+                        rng,
+                    )
+                } else {
+                    // For now pick random rail option
+                    let new_rail_id = options[rng.next_u32() as usize % options.len()];
+                    let (new_rail, new_spline) = rails.get(new_rail_id).unwrap();
+                    let t = new_spline.t_from_pos(&pos).round();
+                    self.traverse(
+                        remaining_distance,
+                        t,
+                        forward,
+                        new_rail_id,
+                        new_rail,
+                        new_spline,
+                        rails,
+                        intersections,
+                        rng,
+                    )
+                }
+            }
+            TraverseResult::End { t, pos, forward } => TrainTraverseResult {
+                t,
+                pos,
+                forward,
+                rail: rail_id,
+            },
+        }
+    }
+}
+
+pub struct TrainTraverseResult {
+    pub t: f32,
+    pub pos: Vec3,
+    pub forward: Dir3,
+    pub rail: Entity,
+}
 
 #[derive(Resource)]
 pub struct TrainAsset {
@@ -44,10 +124,39 @@ fn load_train_asset(
     });
 }
 
+fn traverse(
+    mut q: Query<(&mut Transform, &mut Train)>,
+    rails: Query<(&Rail, &Spline)>,
+    time: Res<Time>,
+    intersections: Res<RailIntersections>,
+    mut rng: GlobalEntropy<WyRand>,
+) {
+    q.iter_mut().for_each(|(mut t, mut train)| {
+        let (rail, spline) = rails.get(train.rail).unwrap();
+        let result = train.traverse(
+            10.0 * time.delta_secs(),
+            train.t,
+            t.forward(),
+            train.rail,
+            rail,
+            spline,
+            &rails,
+            &intersections,
+            &mut rng,
+        );
+
+        train.rail = result.rail;
+        train.t = result.t;
+        t.translation = result.pos;
+        let up = t.up();
+        t.look_at(result.pos + result.forward.as_vec3(), up);
+    });
+}
+
 fn handle_train_placement(
     mut c: Commands,
     mut q: Query<(&mut PlayerCursor, &ActionState<PlayerBuildAction>)>,
-    mut preview: Query<(&mut Transform, &mut PlaceablePreview), With<Train>>,
+    mut preview: Query<(&mut Transform, &mut PlaceablePreview)>,
     rails: Query<&Spline, With<Rail>>,
     // mut gizmos: Gizmos,
     mut ray_cast: MeshRayCast,
@@ -68,6 +177,8 @@ fn handle_train_placement(
     );
     let mut pos = cursor.build_pos;
     let mut forward = preview.0.forward();
+    let mut target_rail = None;
+    let mut target_spline = None;
     if hits.len() > 0 {
         if let Ok(spline) = rails.get(hits[0].0) {
             (pos, forward) = spline.get_nearest_point(&pos, &mut None);
@@ -85,6 +196,8 @@ fn handle_train_placement(
                 forward = Dir3::new(forward.as_vec3() * -1.0).unwrap();
             }
 
+            target_rail = Some(hits[0].0);
+            target_spline = Some(spline);
             *previous_had_hit = true;
         }
     } else {
@@ -113,7 +226,10 @@ fn handle_train_placement(
 
     if can_place && input.just_pressed(&PlayerBuildAction::Interact) {
         c.spawn((
-            Train,
+            Train {
+                t: target_spline.unwrap().t_from_pos(&pos),
+                rail: target_rail.unwrap(),
+            },
             preview.0.clone(),
             Mesh3d(train.mesh.clone()),
             MeshMaterial3d(train.material.clone()),

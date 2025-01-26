@@ -123,7 +123,6 @@ fn create_or_update_placeable_preview(
         Placeable::Rail => {}
         Placeable::Train => {
             c.spawn((
-                Train,
                 PlaceablePreview::new(e_player),
                 Mesh3d(train.mesh.clone()),
                 MeshMaterial3d(train.material.clone()),

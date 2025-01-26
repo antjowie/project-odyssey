@@ -2,6 +2,7 @@
 use avian3d::prelude::*;
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
+use bevy_rand::{plugin::EntropyPlugin, prelude::WyRand};
 
 pub mod camera;
 pub mod debug;
@@ -26,6 +27,7 @@ impl Plugin for AppPlugin {
                     ..default()
                 },
             ),
+            EntropyPlugin::<WyRand>::default(),
             PhysicsPlugins::default(),
             EguiPlugin,
             MeshPickingPlugin,

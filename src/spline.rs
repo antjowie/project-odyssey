@@ -62,28 +62,24 @@ impl Spline {
             .to_curve()
             .unwrap();
 
-        // let mut points = self.create_curve_points();
-        // // points.push(self.controls[1].pos - self.controls[1].forward);
-
-        // let (start, end) = points
-        //     .iter()
-        //     .zip(points.iter().skip(1))
-        //     .min_by(|x, y| {
-        //         let left = pos.distance_squared(*x.0) + pos.distance_squared(*x.1);
-        //         let right = pos.distance_squared(*y.0) + pos.distance_squared(*y.1);
-        //         left.total_cmp(&right)
-        //     })
-        //     .unwrap();
-
-        // self.curve_length = self.curve.iter_accelerations(subdivisions)
+        let points = self.create_curve_points();
+        self.curve_length = points
+            .iter()
+            .zip(points.iter().skip(1))
+            .fold(0.0, |acc, (start, end)| acc + start.distance(*end));
     }
 
     pub fn curve(&self) -> &CubicCurve<Vec3> {
         &self.curve
     }
 
+    pub fn curve_length(&self) -> f32 {
+        self.curve_length
+    }
+
     pub fn with_max_segments(mut self, max_segments: usize) -> Self {
         self.max_segments = Some(max_segments);
+        self.calculate_curve();
         self
     }
 
@@ -215,6 +211,8 @@ impl Spline {
             let cb = c.distance(*b);
             let ab = a.distance(*b);
 
+            /// TODO: This is a very big tolerance. I think we need a better
+            /// method for this, I read about Newton-Rhapson method with jacobian
             if (ac + cb) - ab < 0.1 {
                 t += ac / ab;
                 return t / (points.len() - 1) as f32;

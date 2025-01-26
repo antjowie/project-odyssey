@@ -218,8 +218,71 @@ impl Rail {
 
         self.destroy(self_entity, &mut c, &mut intersections);
     }
+
+    pub fn traverse(
+        &self,
+        t: f32,
+        forward: &Dir3,
+        distance: f32,
+        spline: &Spline,
+    ) -> TraverseResult {
+        let (_, right) = spline.get_nearest_point(&spline.curve().sample(t).unwrap(), &mut None);
+        let current_t = t;
+        let delta_t = distance / spline.curve_length();
+
+        let is_traveling_right = right.dot(forward.as_vec3()) > 0.0;
+        if is_traveling_right {
+            let new_t = current_t + delta_t;
+            if new_t >= 1.0 {
+                TraverseResult::Intersection {
+                    t: 1.0,
+                    pos: spline.controls()[1].pos,
+                    forward: Dir3::new(-spline.controls()[1].forward).unwrap(),
+                    remaining_distance: distance - (delta_t * spline.curve_length()),
+                    intersection_id: self.joints[1].intersection_id,
+                }
+            } else {
+                let pos = spline.curve().sample(new_t).unwrap();
+                TraverseResult::End {
+                    t: new_t,
+                    pos,
+                    forward: spline.get_nearest_point(&pos, &mut None).1,
+                }
+            }
+        } else {
+            let new_t = current_t - delta_t;
+            if new_t < 0.0 {
+                TraverseResult::Intersection {
+                    t: 0.0,
+                    pos: spline.controls()[0].pos,
+                    forward: Dir3::new(-spline.controls()[0].forward).unwrap(),
+                    remaining_distance: distance - (delta_t * spline.curve_length()),
+                    intersection_id: self.joints[0].intersection_id,
+                }
+            } else {
+                let pos = spline.curve().sample(new_t).unwrap();
+                TraverseResult::End {
+                    t: new_t,
+                    pos,
+                    forward: -spline.get_nearest_point(&pos, &mut None).1,
+                }
+            }
+        }
+    }
 }
 
+pub enum TraverseResult {
+    /// We have finished calculating our position if we would traverse
+    End { t: f32, pos: Vec3, forward: Dir3 },
+    /// We have reached the end of the spline, and can
+    Intersection {
+        t: f32,
+        pos: Vec3,
+        forward: Dir3,
+        remaining_distance: f32,
+        intersection_id: u32,
+    },
+}
 /// Represents the data for the rail end points
 pub struct RailJoint {
     pub intersection_id: u32,
@@ -361,15 +424,33 @@ impl RailIntersection {
             -self.right_forward
         }
     }
+
+    pub fn get_curve_options(&self, forward: &Dir3) -> Vec<Entity> {
+        if forward.dot(self.right_forward) > 0.0 {
+            self.right.iter().filter_map(|x| *x).collect()
+        } else {
+            self.left.iter().filter_map(|x| *x).collect()
+        }
+    }
 }
 
 fn on_rail_destroy(
     trigger: Trigger<DestroyEvent>,
     mut q: Query<&mut Rail>,
+    trains: Query<&Train>,
     mut c: Commands,
     mut intersections: ResMut<RailIntersections>,
 ) {
-    q.get_mut(trigger.entity())
+    // Check if there are no trains on this rail
+    // TODO: Add user feedback for this, need to generalize the RailPlannerStatusFeedback struct
+    let entity = trigger.entity();
+    for train in trains.iter() {
+        if train.rail == entity {
+            return;
+        }
+    }
+
+    q.get_mut(entity)
         .unwrap()
         .destroy(trigger.entity(), &mut c, &mut intersections);
 }

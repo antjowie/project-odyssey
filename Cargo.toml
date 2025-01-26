@@ -38,3 +38,5 @@ petgraph = "0.7.1"
 # To generate colliders for meshes, we could also manually hook up Parry, which
 # is a collision-detection library, although avian comes with debugging
 avian3d = "0.2"
+rand_core = "0.6"
+bevy_rand = { version = "0.9", features = ["wyrand"] }
