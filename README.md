@@ -22,7 +22,7 @@ Rail editor
   - through, which brings us in all kinds of weird situations.
 - [x] Improve joint expansion to intersection instead of seperate joints
 - [x] Insert rail into arbitrary area of rail
-- [ ] Expand rail from arbitrary area of rail
+- [x] Expand rail from arbitrary area of rail
 - [ ] Add vertical rail building
   - [x] Add proper raycasting
 - [ ] Add copy pasta? 

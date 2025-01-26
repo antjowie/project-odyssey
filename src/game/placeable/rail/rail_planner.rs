@@ -1,29 +1,25 @@
-use std::f32::consts::FRAC_PI_2;
-
-use bevy::math::vec3;
-
-/// Logic responsible for generating a preview of what RailBuilding will be built
+//! Logic responsible for generating a preview of what RailBuilding will be built
 use super::*;
+use bevy::math::vec3;
+use std::f32::consts::FRAC_PI_2;
 
 pub fn rail_planner_plugin(app: &mut App) {
     app.add_systems(Startup, setup_rail_planner_feedback_text);
     app.add_systems(
         Update,
-        update_rail_planner_status.run_if(any_with_component::<RailPlannerStatusFeedback>),
-    );
-    app.add_systems(
-        Update,
         (
-            create_rail_planner,
-            update_rail_planner,
-            draw_rail_planner,
-            preview_initial_rail_planner_placement.run_if(not(any_with_component::<RailPlanner>)),
-        )
-            .run_if(
-                // We use any with compnent as we assume it exists on some of the funcs
-                any_with_component::<InputContext<PlayerBuildAction>>
-                    .and(is_placeable_preview(Placeable::Rail)),
-            ),
+            update_rail_planner_status.run_if(any_with_component::<RailPlannerStatusFeedback>),
+            (
+                update_intitial_rail_planner.run_if(not(any_with_component::<RailPlanner>)),
+                update_rail_planner,
+                draw_rail_planner,
+            )
+                .run_if(
+                    // We use any with compnent as we assume it exists on some of the funcs
+                    any_with_component::<InputContext<PlayerBuildAction>>
+                        .and(is_placeable_preview(Placeable::Rail)),
+                ),
+        ),
     );
 }
 
@@ -68,7 +64,9 @@ impl RailPlanner {
     }
 
     fn is_initial_placement(&self) -> bool {
-        self.is_initial_placement && self.start_intersection_id.is_none()
+        self.is_initial_placement
+            && self.start_intersection_id.is_none()
+            && self.start_rail.is_none()
     }
 }
 
@@ -92,7 +90,8 @@ pub enum RailPlannerStatus {
     ExtendTooCloseToIntersection(f32),
     /// TODO: We can support this by making sure trains during this modification
     /// are reassigned to rails, but for now we just disallow it
-    TrainOnRail,
+    TrainOnStartRail,
+    TrainOnEndRail,
 }
 
 fn handle_build_state_cancel_event(
@@ -116,7 +115,7 @@ fn setup_rail_planner_feedback_text(mut c: Commands) {
     c.spawn(RailPlannerStatusFeedback);
 }
 
-fn create_rail_planner(
+fn update_intitial_rail_planner(
     mut c: Commands,
     q: Query<Entity, With<RailPlanner>>,
     player_state: Query<(Entity, &PlayerCursor, &ActionState<PlayerBuildAction>)>,
@@ -124,7 +123,9 @@ fn create_rail_planner(
     mut event: EventReader<PlayerStateEvent>,
     asset: Res<RailAsset>,
     mut ray_cast: MeshRayCast,
-    rails: Query<Entity, (With<Rail>, Without<PlaceablePreview>)>,
+    rails: Query<(Entity, &Rail, &Spline), Without<PlaceablePreview>>,
+    mut align_to_right: Local<bool>,
+    mut gizmos: Gizmos,
 ) {
     // Hacky, but we want to ignore placing this on the switch to view mode
     for ev in event.read() {
@@ -134,67 +135,100 @@ fn create_rail_planner(
     }
 
     let (state_e, cursor, input) = player_state.single();
-    if q.is_empty() && input.just_pressed(&PlayerBuildAction::Interact) {
-        let mut spline = Spline::default();
-        let mut plan = RailPlanner::new(cursor.build_pos, &mut spline);
+    let mut spline = Spline::default();
+    let mut plan = RailPlanner::new(cursor.build_pos, &mut spline);
+    let mut pos = cursor.build_pos;
 
-        // Check if we have an intersection with an intersection
-        let cursor_sphere = BoundingSphere::new(cursor.build_pos, 0.1);
-        plan.start_intersection_id = intersections
-            .get_intersect_collision(&cursor_sphere)
-            .and_then(|x| {
-                spline.set_controls_index(
-                    0,
-                    SplineControl {
-                        pos: x.1.collision.center.into(),
-                        forward: x.1.get_nearest_forward(cursor.world_pos),
-                    },
-                );
-
-                Some(*x.0)
-            });
-
-        // Check if we have an intersection with a mesh
-        if plan.start_intersection_id.is_none() {
-            let hits = ray_cast.cast_ray(
-                cursor.ray,
-                &RayCastSettings::default().with_filter(&|e| rails.contains(e)),
+    // Check if we have an intersection with an intersection
+    let cursor_sphere = BoundingSphere::new(cursor.build_pos, 0.1);
+    plan.start_intersection_id = intersections
+        .get_intersect_collision(&cursor_sphere)
+        .and_then(|x| {
+            pos = x.1.collision.center.into();
+            spline.set_controls_index(
+                0,
+                SplineControl {
+                    pos,
+                    forward: x.1.get_nearest_forward(cursor.world_pos),
+                },
             );
-            if hits.len() > 0 {
-                if let Ok(e) = rails.get(hits[0].0) {
-                    // plan.start_rail = Some(e);
-                    // TODO: Setup snapping
+
+            let start: Vec3 = x.1.collision.center.into();
+            let end = start + x.1.get_nearest_forward(cursor.world_pos) * 10.;
+
+            gizmos
+                .arrow(start, end, Color::srgb(1., 1., 0.))
+                .with_tip_length(5.);
+
+            Some(*x.0)
+        });
+
+    // Check if we have an intersection with a mesh
+    plan.start_rail = None;
+    if plan.start_intersection_id.is_none() {
+        let hits = ray_cast.cast_ray(
+            cursor.ray,
+            &RayCastSettings::default().with_filter(&|e| rails.contains(e)),
+        );
+        if hits.len() > 0 {
+            if let Ok((e, target_rail, target_spline)) = rails.get(hits[0].0) {
+                plan.start_rail = Some(e);
+
+                let (spline_pos, forward) =
+                    target_spline.get_nearest_point(&cursor.build_pos, &mut None);
+                pos = spline_pos;
+                let mut forward = forward.as_vec3();
+
+                // Check if we are trying to expand rail
+                if input.just_pressed(&PlayerBuildAction::Rotate) {
+                    *align_to_right = !*align_to_right;
                 }
+
+                if *align_to_right == false {
+                    forward = -forward;
+                }
+
+                let start = intersections
+                    .intersections
+                    .get(&target_rail.joints[0].intersection_id)
+                    .unwrap()
+                    .collision
+                    .center;
+                let end = intersections
+                    .intersections
+                    .get(&target_rail.joints[1].intersection_id)
+                    .unwrap()
+                    .collision
+                    .center;
+                let min_distance = pos.distance(start.into()).min(pos.distance(end.into()));
+
+                // TODO: Notify user of this validation failure
+                if min_distance < RAIL_MIN_LENGTH {
+                    plan.status = RailPlannerStatus::ExtendTooCloseToIntersection(min_distance);
+                }
+
+                gizmos
+                    .arrow(pos, pos + forward * 10.0, Color::srgb_u8(200, 100, 100))
+                    .with_tip_length(5.0);
+
+                spline.set_controls_index(0, SplineControl { pos, forward });
             }
         }
 
+        gizmos.cuboid(
+            Transform::from_translation(pos).with_scale(Vec3::splat(2.0)),
+            Color::WHITE,
+        );
+    }
+    if q.is_empty()
+        && plan.status == RailPlannerStatus::Valid
+        && input.just_pressed(&PlayerBuildAction::Interact)
+    {
         c.spawn(plan)
             .insert(spline)
             .insert(PlaceablePreview::new(state_e))
             .insert(MeshMaterial3d(asset.material.clone()))
             .observe(handle_build_state_cancel_event);
-    }
-}
-
-fn preview_initial_rail_planner_placement(
-    mut gizmos: Gizmos,
-    cursor: Single<&PlayerCursor>,
-    intersections: Res<RailIntersections>,
-) {
-    let cursor_sphere = BoundingSphere::new(cursor.build_pos, 0.1);
-
-    gizmos.cuboid(
-        Transform::from_translation(cursor.build_pos).with_scale(Vec3::splat(2.0)),
-        Color::WHITE,
-    );
-
-    if let Some(x) = intersections.get_intersect_collision(&cursor_sphere) {
-        let start: Vec3 = x.1.collision.center.into();
-        let end = start + x.1.get_nearest_forward(cursor.world_pos) * 10.;
-
-        gizmos
-            .arrow(start, end, Color::srgb(1., 1., 0.))
-            .with_tip_length(5.);
     }
 }
 
@@ -346,12 +380,18 @@ fn update_rail_planner(
                     && plan.start_rail.unwrap() == plan.end_rail.unwrap()
                 {
                     RailPlannerStatus::ExtendIntoSelf
+                } else if plan.start_rail.is_some()
+                    && trains
+                        .iter()
+                        .any(|train| train.rail == plan.start_rail.unwrap())
+                {
+                    RailPlannerStatus::TrainOnStartRail
                 } else if plan.end_rail.is_some()
                     && trains
                         .iter()
                         .any(|train| train.rail == plan.end_rail.unwrap())
                 {
-                    RailPlannerStatus::TrainOnRail
+                    RailPlannerStatus::TrainOnEndRail
                 } else {
                     let points: Vec<Vec3> = spline.create_curve_points();
                     let first_segment = points[1] - points[0];
@@ -482,7 +522,8 @@ fn update_rail_planner_status(
                     x, RAIL_MIN_LENGTH
                 )
                 .into(),
-                RailPlannerStatus::TrainOnRail => "Trains are on rail".into(),
+                RailPlannerStatus::TrainOnStartRail => "Trains are on origin rail".into(),
+                RailPlannerStatus::TrainOnEndRail => "Trains are on destination rail".into(),
             };
 
             let input = input_entries.get_input_entry(&PlayerBuildAction::CycleCurveMode);

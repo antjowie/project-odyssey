@@ -132,7 +132,7 @@ impl Spline {
         let (index, start) = start;
 
         // Calculate perpendicular vec from pos to rail
-        let forward = Dir3::new(end - start).unwrap();
+        let forward = Dir3::new((end - start).normalize()).unwrap();
         let right = forward.cross(Vec3::Y);
         let to_center = (start - pos).project_onto(right);
 
