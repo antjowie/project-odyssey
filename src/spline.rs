@@ -109,33 +109,52 @@ impl Spline {
             segments = segments.min(max_segments);
         }
 
-        self.curve.iter_positions(segments).collect()
+        const QUALITY: usize = 3;
+        self.curve.iter_positions(segments * QUALITY).collect()
     }
 
     /// Returns the nearest position to the spline, for rails this represents
     /// the center of the rail.
     pub fn get_nearest_point(&self, pos: &Vec3, gizmos: &mut Option<&mut Gizmos>) -> (Vec3, Dir3) {
         // Gather all point and do distance checks to see which segment pos is closest to
-        let points = self.create_curve_points();
+        let mut points = self.create_curve_points();
         let (start, end) = points
             .iter()
+            .enumerate()
             .zip(points.iter().skip(1))
             .min_by(|x, y| {
-                let left = pos.distance_squared(*x.0) + pos.distance_squared(*x.1);
-                let right = pos.distance_squared(*y.0) + pos.distance_squared(*y.1);
+                let left = pos.distance_squared(*x.0 .1) + pos.distance_squared(*x.1);
+                let right = pos.distance_squared(*y.0 .1) + pos.distance_squared(*y.1);
                 left.total_cmp(&right)
             })
             .unwrap();
 
+        let (index, start) = start;
+
         // Calculate perpendicular vec from pos to rail
         let forward = Dir3::new(end - start).unwrap();
         let right = forward.cross(Vec3::Y);
-
         let to_center = (start - pos).project_onto(right);
+
         if let Some(gizmos) = gizmos {
             gizmos.line(*pos, pos + to_center, Color::BLACK);
         }
-        (pos + to_center, forward)
+
+        // Calculate interpolated forward/right vector
+        let pos = pos + to_center;
+        let t = start.distance(pos) / start.distance(*end);
+
+        points.insert(0, self.controls()[0].pos - self.controls()[0].forward);
+        points.push(self.controls()[1].pos - self.controls()[1].forward);
+
+        let to_start = Dir3::new(points[index + 1] - points[index]).unwrap();
+        let from_start = Dir3::new(points[index + 2] - points[index + 1]).unwrap();
+        let from_end = Dir3::new(points[index + 3] - points[index + 2]).unwrap();
+
+        let start_fwd = to_start.slerp(from_start, 0.5);
+        let end_fwd = from_start.slerp(from_end, 0.5);
+
+        (pos, start_fwd.slerp(end_fwd, t))
     }
 
     /// Create left and right spline with pos as center
@@ -211,8 +230,8 @@ impl Spline {
             let cb = c.distance(*b);
             let ab = a.distance(*b);
 
-            /// TODO: This is a very big tolerance. I think we need a better
-            /// method for this, I read about Newton-Rhapson method with jacobian
+            // TODO: This is a very big tolerance. I think we need a better
+            // method for this, I read about Newton-Rhapson method with jacobian
             if (ac + cb) - ab < 0.1 {
                 t += ac / ab;
                 return t / (points.len() - 1) as f32;

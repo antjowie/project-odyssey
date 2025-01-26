@@ -90,8 +90,9 @@ pub enum RailPlannerStatus {
     /// implementing it atm
     ExtendIntoSelf,
     ExtendTooCloseToIntersection(f32),
-    // TODO: Once we add traffic and bind trails to their rails, make sure we can't
-    // split/destroy rails that have trains on them
+    /// TODO: We can support this by making sure trains during this modification
+    /// are reassigned to rails, but for now we just disallow it
+    TrainOnRail,
 }
 
 fn handle_build_state_cancel_event(
@@ -202,6 +203,7 @@ fn update_rail_planner(
     mut c: Commands,
     mut q: Query<(&mut RailPlanner, &mut Spline), Without<Rail>>,
     mut rails: Query<(Entity, &mut Rail, &mut Spline), Without<PlaceablePreview>>,
+    trains: Query<&Train>,
     mut player_states: Query<(&mut PlayerCursor, &ActionState<PlayerBuildAction>)>,
     mut intersections: ResMut<RailIntersections>,
     asset: Res<RailAsset>,
@@ -344,6 +346,12 @@ fn update_rail_planner(
                     && plan.start_rail.unwrap() == plan.end_rail.unwrap()
                 {
                     RailPlannerStatus::ExtendIntoSelf
+                } else if plan.end_rail.is_some()
+                    && trains
+                        .iter()
+                        .any(|train| train.rail == plan.end_rail.unwrap())
+                {
+                    RailPlannerStatus::TrainOnRail
                 } else {
                     let points: Vec<Vec3> = spline.create_curve_points();
                     let first_segment = points[1] - points[0];
@@ -474,6 +482,7 @@ fn update_rail_planner_status(
                     x, RAIL_MIN_LENGTH
                 )
                 .into(),
+                RailPlannerStatus::TrainOnRail => "Trains are on rail".into(),
             };
 
             let input = input_entries.get_input_entry(&PlayerBuildAction::CycleCurveMode);

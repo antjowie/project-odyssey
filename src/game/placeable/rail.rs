@@ -238,11 +238,17 @@ impl Rail {
                     t: 1.0,
                     pos: spline.controls()[1].pos,
                     forward: Dir3::new(-spline.controls()[1].forward).unwrap(),
-                    remaining_distance: distance - (delta_t * spline.curve_length()),
+                    remaining_distance: (distance - (delta_t * spline.curve_length())).max(0.0),
                     intersection_id: self.joints[1].intersection_id,
                 }
             } else {
-                let pos = spline.curve().sample(new_t).unwrap();
+                let pos = spline.curve().sample(new_t).expect(
+                    format!(
+                        "{} is outside of domain curr {} delta {}",
+                        new_t, current_t, delta_t
+                    )
+                    .as_str(),
+                );
                 TraverseResult::End {
                     t: new_t,
                     pos,
@@ -251,16 +257,22 @@ impl Rail {
             }
         } else {
             let new_t = current_t - delta_t;
-            if new_t < 0.0 {
+            if new_t <= 0.0 {
                 TraverseResult::Intersection {
                     t: 0.0,
                     pos: spline.controls()[0].pos,
                     forward: Dir3::new(-spline.controls()[0].forward).unwrap(),
-                    remaining_distance: distance - (delta_t * spline.curve_length()),
+                    remaining_distance: (distance - (delta_t * spline.curve_length())).max(0.0),
                     intersection_id: self.joints[0].intersection_id,
                 }
             } else {
-                let pos = spline.curve().sample(new_t).unwrap();
+                let pos = spline.curve().sample(new_t).expect(
+                    format!(
+                        "{} is outside of domain curr {} delta {}",
+                        new_t, current_t, delta_t
+                    )
+                    .as_str(),
+                );
                 TraverseResult::End {
                     t: new_t,
                     pos,
