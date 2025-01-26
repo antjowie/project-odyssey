@@ -1,6 +1,7 @@
 use super::*;
 use bevy::{
     math::bounding::{BoundingSphere, IntersectsVolume},
+    picking::focus::PickingInteraction,
     utils::{hashbrown::HashSet, HashMap},
 };
 use bevy_egui::{egui, EguiContexts};
@@ -108,34 +109,117 @@ impl Rail {
         self_state
     }
 
-    pub fn insert_intersection(
+    pub fn destroy(
         &mut self,
-        pos: &Vec3,
-        spline: &mut Spline,
+        self_entity: Entity,
         c: &mut Commands,
         intersections: &mut ResMut<RailIntersections>,
     ) {
-        // Generate 2 splines based on t
-        // https://pomax.github.io/bezierinfo/#splitting
-        // let curve = spline.create_curve();
-        // let t =
+        let mut process = |intersection_id| {
+            let intersection = intersections
+                .intersections
+                .get_mut(&intersection_id)
+                .unwrap();
+            if let Some(entry) = intersection
+                .left
+                .iter_mut()
+                .chain(intersection.right.iter_mut())
+                .find(|e| e.is_some_and(|e| e == self_entity))
+            {
+                *entry = None;
+            }
 
-        // left=[]
-        // right=[]
-        // function drawCurvePoint(points[], t):
-        // if(points.length==1):
-        //     left.add(points[0])
-        //     right.add(points[0])
-        //     draw(points[0])
-        // else:
-        //     newpoints=array(points.size-1)
-        //     for(i=0; i<newpoints.length; i++):
-        //     if(i==0):
-        //         left.add(points[i])
-        //     if(i==newpoints.length-1):
-        //         right.add(points[i+1])
-        //     newpoints[i] = (1-t) * points[i] + t * points[i+1]
-        // drawCurvePoint(newpoints, t)
+            // Check if this intersection has no connections anymore, if so destroy it
+            if intersection
+                .left
+                .iter()
+                .chain(intersection.right.iter())
+                .find(|e| e.is_some())
+                .is_none()
+            {
+                intersections.id_provider.return_id(intersection_id);
+            } else {
+                intersection.left.sort_by(|a, b| b.cmp(a));
+                intersection.right.sort_by(|a, b| b.cmp(a));
+            }
+        };
+
+        process(self.joints[0].intersection_id);
+        process(self.joints[1].intersection_id);
+        c.entity(self_entity).despawn();
+    }
+
+    /// When we insert an intersection we remove the existing rail, split it into 2 and insert an intersection inbetween
+    pub fn insert_intersection(
+        &mut self,
+        middle_intersection_id: u32,
+        self_entity: Entity,
+        pos: &Vec3,
+        spline: &mut Spline,
+        mut c: &mut Commands,
+        mut intersections: &mut ResMut<RailIntersections>,
+        rail_asset: &RailAsset,
+        gizmos: &mut Option<&mut Gizmos>,
+    ) {
+        // Create a joint at the intersection point
+        let default_plan = RailPlanner {
+            start_intersection_id: None,
+            end_intersection_id: None,
+            is_initial_placement: false,
+            status: RailPlannerStatus::Valid,
+            start_rail: None,
+            end_rail: None,
+        };
+
+        // Split start
+        let (start_spline, end_spline) = spline.split(pos, gizmos);
+        let mut start_entity = c.spawn_empty();
+        let start_plan = RailPlanner {
+            start_intersection_id: Some(self.joints[0].intersection_id),
+            end_intersection_id: Some(middle_intersection_id),
+            ..default_plan
+        };
+        let start_rail = Rail::new(
+            start_entity.id(),
+            &mut intersections,
+            &start_plan,
+            &start_spline,
+        );
+        start_entity
+            .insert((
+                MeshMaterial3d(rail_asset.material.clone()),
+                start_rail,
+                start_spline,
+            ))
+            .observe(update_material_on::<Pointer<Over>>(
+                rail_asset.hover_material.clone(),
+            ))
+            .observe(update_material_on::<Pointer<Out>>(
+                rail_asset.material.clone(),
+            ));
+
+        // Split end
+        let mut end_entity = c.spawn_empty();
+        let end_plan = RailPlanner {
+            start_intersection_id: Some(middle_intersection_id),
+            end_intersection_id: Some(self.joints[1].intersection_id),
+            ..default_plan
+        };
+        let end_rail = Rail::new(end_entity.id(), &mut intersections, &end_plan, &end_spline);
+        end_entity
+            .insert((
+                MeshMaterial3d(rail_asset.material.clone()),
+                end_rail,
+                end_spline,
+            ))
+            .observe(update_material_on::<Pointer<Over>>(
+                rail_asset.hover_material.clone(),
+            ))
+            .observe(update_material_on::<Pointer<Out>>(
+                rail_asset.material.clone(),
+            ));
+
+        self.destroy(self_entity, &mut c, &mut intersections);
     }
 }
 
@@ -157,21 +241,34 @@ impl RailIntersections {
         rails: &Query<&Rail>,
     ) -> Vec<u32> {
         let mut collect = HashSet::new();
-        self.gather(intersection_id, rails, &mut collect);
+        self.collect_connected_intersections(intersection_id, rails, &mut collect);
         collect.into_iter().collect()
     }
 
-    fn gather(&self, intersection_id: u32, rails: &Query<&Rail>, collect: &mut HashSet<u32>) {
+    fn collect_connected_intersections(
+        &self,
+        intersection_id: u32,
+        rails: &Query<&Rail>,
+        collect: &mut HashSet<u32>,
+    ) {
         collect.insert(intersection_id);
         let root = self.intersections.get(&intersection_id).unwrap();
         root.left.iter().chain(root.right.iter()).for_each(|e| {
             if let Some(e) = e {
                 let rail = rails.get(*e).unwrap();
                 if !collect.contains(&rail.joints[0].intersection_id) {
-                    self.gather(rail.joints[0].intersection_id, rails, collect);
+                    self.collect_connected_intersections(
+                        rail.joints[0].intersection_id,
+                        rails,
+                        collect,
+                    );
                 }
                 if !collect.contains(&rail.joints[1].intersection_id) {
-                    self.gather(rail.joints[1].intersection_id, rails, collect);
+                    self.collect_connected_intersections(
+                        rail.joints[1].intersection_id,
+                        rails,
+                        collect,
+                    );
                 }
             }
         });
@@ -282,12 +379,13 @@ fn load_rail_asset(mut c: Commands, mut materials: ResMut<Assets<StandardMateria
     });
 }
 
-fn debug_rail_path(mut gizmos: Gizmos, q: Query<&Spline, With<Rail>>) {
-    q.into_iter().for_each(|spline| {
+fn debug_rail_path(
+    mut gizmos: Gizmos,
+    q: Query<(&Spline, Option<&PickingInteraction>), With<Rail>>,
+) {
+    q.into_iter().for_each(|(spline, picking)| {
         // Draw line
-        let points = spline.create_curve_control_points();
-
-        let curve = CubicBezier::new(points).to_curve().unwrap();
+        let curve = spline.curve();
         const STEPS: usize = 10;
         gizmos.linestrip(curve.iter_positions(STEPS), Color::WHITE);
 
@@ -302,6 +400,13 @@ fn debug_rail_path(mut gizmos: Gizmos, q: Query<&Spline, With<Rail>>) {
             spline.controls()[0].pos + spline.controls()[0].forward,
             Color::srgb(0.1, 0.1, 1.0),
         );
+
+        if picking.is_some_and(|x| x == &PickingInteraction::Hovered) {
+            gizmos.linestrip(
+                spline.create_curve_control_points()[0],
+                Color::srgb(0.5, 0.5, 0.5),
+            );
+        }
     });
 }
 

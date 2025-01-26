@@ -70,7 +70,7 @@ fn handle_train_placement(
     let mut forward = preview.0.forward();
     if hits.len() > 0 {
         if let Ok(spline) = rails.get(hits[0].0) {
-            (pos, forward) = spline.get_nearest_point(&pos);
+            (pos, forward) = spline.get_nearest_point(&pos, &mut None);
             cursor.manual_rotation = 0.0;
 
             if !*previous_had_hit {

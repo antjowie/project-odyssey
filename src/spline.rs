@@ -16,6 +16,11 @@ impl Plugin for SplinePlugin {
 #[derive(Component, Clone, Reflect, PartialEq)]
 pub struct Spline {
     controls: [SplineControl; 2],
+    /// Override for the curve control points, used when we are extending and can't realy on the path types
+    /// TODO: Might have to reconsider how we build rails, since we calculate control points based on length
+    /// we lose control in these kinds of scenarios, it might be better to just go for a more granular build mode
+    /// where the user specified their own control points, maybe even allow modifying control points of exisiting rails
+    controls_override: Option<[Vec3; 2]>,
     pub min_segment_length: f32,
     pub max_segments: Option<usize>,
     curve: CubicCurve<Vec3>,
@@ -26,6 +31,7 @@ impl Default for Spline {
     fn default() -> Self {
         Self {
             controls: Default::default(),
+            controls_override: None,
             min_segment_length: 10.0,
             max_segments: None,
             curve: CubicBezier::new([[Vec3::ZERO, Vec3::ZERO, Vec3::ZERO, Vec3::ZERO]])
@@ -85,14 +91,17 @@ impl Spline {
         let start = &self.controls[0];
         let end = &self.controls[1];
 
-        let length = (end.pos - start.pos).length();
-
-        [[
-            start.pos,
-            start.pos + start.forward * length * 0.5,
-            end.pos + end.forward * length * 0.5,
-            end.pos,
-        ]]
+        if let Some(control_points) = self.controls_override {
+            [[start.pos, control_points[0], control_points[1], end.pos]]
+        } else {
+            let length = (end.pos - start.pos).length();
+            [[
+                start.pos,
+                start.pos + start.forward * length * 0.5,
+                end.pos + end.forward * length * 0.5,
+                end.pos,
+            ]]
+        }
     }
 
     pub fn create_curve_points(&self) -> Vec<Vec3> {
@@ -109,7 +118,7 @@ impl Spline {
 
     /// Returns the nearest position to the spline, for rails this represents
     /// the center of the rail.
-    pub fn get_nearest_point(&self, pos: &Vec3) -> (Vec3, Dir3) {
+    pub fn get_nearest_point(&self, pos: &Vec3, gizmos: &mut Option<&mut Gizmos>) -> (Vec3, Dir3) {
         // Gather all point and do distance checks to see which segment pos is closest to
         let points = self.create_curve_points();
         let (start, end) = points
@@ -127,10 +136,16 @@ impl Spline {
         let right = forward.cross(Vec3::Y);
 
         let to_center = (start - pos).project_onto(right);
+        if let Some(gizmos) = gizmos {
+            gizmos.line(*pos, pos + to_center, Color::BLACK);
+        }
         (pos + to_center, forward)
     }
 
-    pub fn t_from_pos(&self, pos: &Vec3, gizmos: &mut Gizmos) {
+    /// Create left and right spline with pos as center
+    pub fn split(&self, pos: &Vec3, gizmos: &mut Option<&mut Gizmos>) -> (Spline, Spline) {
+        let pos = self.get_nearest_point(pos, gizmos).0;
+        let t = self.t_from_pos(&pos);
         let control_points = self.create_curve_control_points();
         let s = control_points[0][0];
         let sc = control_points[0][1];
@@ -138,28 +153,82 @@ impl Spline {
         let e = control_points[0][3];
 
         // https://pomax.github.io/bezierinfo/#splitting
-        let pos = self.get_nearest_point(pos).0;
-        let t = 0.5;
         let t1 = s + (sc - s) * t;
         let t2 = sc + (ec - sc) * t;
         let t3 = ec + (e - ec) * t;
-        let start = [[s, t1, t1 + (t2 - t1) * t, pos]];
-        let end = [[pos, t2 + (t3 - t2) * t, t3, e]];
+        let start = [s, t1, t1 + (t2 - t1) * t, pos];
+        let end = [pos, t2 + (t3 - t2) * t, t3, e];
 
-        gizmos.sphere(pos, 5.0, Color::BLACK);
-        gizmos.sphere(s, 5.0, Color::srgb(1.0, 0.0, 0.0));
-        gizmos.sphere(sc, 5.0, Color::srgb(0.0, 1.0, 0.0));
-        gizmos.sphere(ec, 5.0, Color::srgb(0.0, 0.0, 1.0));
-        gizmos.sphere(e, 5.0, Color::srgb(1.0, 1.0, 1.0));
-        // gizmos.sphere(t1, 5.0, Color::srgb(1.0, 0.0, 0.0));
-        // gizmos.sphere(t2, 5.0, Color::srgb(0.0, 1.0, 0.0));
-        // gizmos.sphere(t3, 5.0, Color::srgb(0.0, 0.0, 1.0));
-        gizmos.line(start[0][0], start[0][1], Color::srgb(0.0, 0.0, 1.0));
-        gizmos.line(start[0][1], start[0][2], Color::srgb(0.0, 0.0, 1.0));
-        gizmos.line(start[0][2], start[0][3], Color::srgb(0.0, 0.0, 1.0));
-        gizmos.line(end[0][0], end[0][1], Color::srgb(1.0, 0.0, 0.0));
-        gizmos.line(end[0][1], end[0][2], Color::srgb(1.0, 0.0, 0.0));
-        gizmos.line(end[0][2], end[0][3], Color::srgb(1.0, 0.0, 0.0));
+        if let Some(gizmos) = gizmos {
+            gizmos.sphere(self.curve.sample(t).unwrap(), 5.0, Color::BLACK);
+            // gizmos.sphere(s, 5.0, Color::srgb(1.0, 0.0, 0.0));
+            // gizmos.sphere(sc, 5.0, Color::srgb(0.0, 1.0, 0.0));
+            // gizmos.sphere(ec, 5.0, Color::srgb(0.0, 0.0, 1.0));
+            // gizmos.sphere(e, 5.0, Color::srgb(1.0, 1.0, 1.0));
+            gizmos.sphere(t1, 5.0, Color::srgb(1.0, 0.0, 0.0));
+            gizmos.sphere(t2, 5.0, Color::srgb(0.0, 1.0, 0.0));
+            gizmos.sphere(t3, 5.0, Color::srgb(0.0, 0.0, 1.0));
+            gizmos.line(start[0], start[1], Color::srgb(0.0, 0.0, 1.0));
+            gizmos.line(start[1], start[2], Color::srgb(0.0, 0.0, 1.0));
+            gizmos.line(start[2], start[3], Color::srgb(0.0, 0.0, 1.0));
+            gizmos.line(end[0], end[1], Color::srgb(1.0, 0.0, 0.0));
+            gizmos.line(end[1], end[2], Color::srgb(1.0, 0.0, 0.0));
+            gizmos.line(end[2], end[3], Color::srgb(1.0, 0.0, 0.0));
+        }
+
+        let mut start_spline = Spline::default();
+        start_spline.controls_override = Some([start[1], start[2]]);
+        start_spline.set_controls([
+            SplineControl {
+                pos: start[0],
+                forward: (start[1] - start[0]).normalize(),
+            },
+            SplineControl {
+                pos: start[3],
+                forward: (start[2] - start[3]).normalize(),
+            },
+        ]);
+
+        let mut end_spline = Spline::default();
+        end_spline.controls_override = Some([end[1], end[2]]);
+        end_spline.set_controls([
+            SplineControl {
+                pos: end[0],
+                forward: (end[1] - end[0]).normalize(),
+            },
+            SplineControl {
+                pos: end[3],
+                forward: (end[2] - end[3]).normalize(),
+            },
+        ]);
+
+        (start_spline, end_spline)
+    }
+
+    pub fn t_from_pos(&self, pos: &Vec3) -> f32 {
+        let points = self.create_curve_points();
+        let c = self.get_nearest_point(pos, &mut None).0;
+
+        let mut t = 0.0;
+        for (a, b) in points.iter().zip(points.iter().skip(1)) {
+            let ac = a.distance(c);
+            let cb = c.distance(*b);
+            let ab = a.distance(*b);
+
+            if (ac + cb) - ab < 0.1 {
+                t += ac / ab;
+                return t / (points.len() - 1) as f32;
+            } else {
+                t += 1.0;
+            }
+        }
+
+        // Pos was not on the spline
+        assert!(
+            false,
+            "Unable to calculate t from pos, unless pos is not on spline this is an error"
+        );
+        0.0
     }
 }
 
@@ -169,6 +238,7 @@ pub struct SplineControl {
     pub pos: Vec3,
     /// Points in the direction of the curve
     /// EX: for a horizontal curve the left control would point to the right
+    /// and the right would point to the left
     pub forward: Vec3,
 }
 

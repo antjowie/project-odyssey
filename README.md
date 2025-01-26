@@ -13,7 +13,7 @@ Rail editor
 - [x] Gen collider for curve
 - [ ] Add segment deconstruction
 - [x] Improve joint expansion to intersection instead of seperate joints
-- [ ] Extend rail arbitrary from segment
+- [x] Extend rail arbitrary from segment
 - [ ] Add vertical rail building
   - [ ] Add proper raycasting
 - [ ] Add copy pasta? 

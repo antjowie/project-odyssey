@@ -37,6 +37,11 @@ pub struct RailPlanner {
     pub is_initial_placement: bool,
     pub end_intersection_id: Option<u32>,
     pub status: RailPlannerStatus,
+
+    /// If start or end rail are defined we want to split them, since we are
+    /// creating an intersection somewhere on the existing rail
+    pub start_rail: Option<Entity>,
+    pub end_rail: Option<Entity>,
 }
 
 impl RailPlanner {
@@ -57,6 +62,8 @@ impl RailPlanner {
             is_initial_placement: true,
             end_intersection_id: None,
             status: RailPlannerStatus::Valid,
+            start_rail: None,
+            end_rail: None,
         }
     }
 
@@ -70,14 +77,21 @@ impl RailPlanner {
 #[require(Text, TextFont(|| default_text_font()))]
 struct RailPlannerStatusFeedback;
 
-#[derive(Default, PartialEq, Debug)]
+#[derive(Default, PartialEq, Debug, Copy, Clone)]
 pub enum RailPlannerStatus {
     #[default]
     Valid,
     CurveTooSharp(f32),
-    // Our delta angle is too close to any other curves in our joint
+    /// Our delta angle is too close to any other curves in our joint
     CurveTooShallow(f32),
     RailTooShort(f32),
+    /// TODO: Something we might wanna support, but atm we are storing entity references
+    /// so removing it and then readding it, while possible is such an edge case I don't feel like
+    /// implementing it atm
+    ExtendIntoSelf,
+    ExtendTooCloseToIntersection(f32),
+    // TODO: Once we add traffic and bind trails to their rails, make sure we can't
+    // split/destroy rails that have trains on them
 }
 
 fn handle_build_state_cancel_event(
@@ -108,6 +122,8 @@ fn create_rail_planner(
     intersections: Res<RailIntersections>,
     mut event: EventReader<PlayerStateEvent>,
     asset: Res<RailAsset>,
+    mut ray_cast: MeshRayCast,
+    rails: Query<Entity, (With<Rail>, Without<PlaceablePreview>)>,
 ) {
     // Hacky, but we want to ignore placing this on the switch to view mode
     for ev in event.read() {
@@ -118,11 +134,11 @@ fn create_rail_planner(
 
     let (state_e, cursor, input) = player_state.single();
     if q.is_empty() && input.just_pressed(&PlayerBuildAction::Interact) {
-        let cursor_sphere = BoundingSphere::new(cursor.build_pos, 0.1);
-
         let mut spline = Spline::default();
         let mut plan = RailPlanner::new(cursor.build_pos, &mut spline);
 
+        // Check if we have an intersection with an intersection
+        let cursor_sphere = BoundingSphere::new(cursor.build_pos, 0.1);
         plan.start_intersection_id = intersections
             .get_intersect_collision(&cursor_sphere)
             .and_then(|x| {
@@ -136,6 +152,20 @@ fn create_rail_planner(
 
                 Some(*x.0)
             });
+
+        // Check if we have an intersection with a mesh
+        if plan.start_intersection_id.is_none() {
+            let hits = ray_cast.cast_ray(
+                cursor.ray,
+                &RayCastSettings::default().with_filter(&|e| rails.contains(e)),
+            );
+            if hits.len() > 0 {
+                if let Ok(e) = rails.get(hits[0].0) {
+                    // plan.start_rail = Some(e);
+                    // TODO: Setup snapping
+                }
+            }
+        }
 
         c.spawn(plan)
             .insert(spline)
@@ -171,11 +201,13 @@ fn update_rail_planner(
     mut gizmos: Gizmos,
     mut c: Commands,
     mut q: Query<(&mut RailPlanner, &mut Spline), Without<Rail>>,
-    rails: Query<(&Rail, &Spline)>,
+    mut rails: Query<(Entity, &mut Rail, &mut Spline), Without<PlaceablePreview>>,
     mut player_states: Query<(&mut PlayerCursor, &ActionState<PlayerBuildAction>)>,
     mut intersections: ResMut<RailIntersections>,
     asset: Res<RailAsset>,
     mut ray_cast: MeshRayCast,
+    // prev_hover, should_align
+    mut align_to_right: Local<(bool, bool)>,
 ) {
     let (mut cursor, input) = player_states.single_mut();
 
@@ -185,12 +217,14 @@ fn update_rail_planner(
 
         let delta = controls[1].pos - controls[0].pos;
         let towards = delta.normalize();
+        plan.status = RailPlannerStatus::Valid;
 
         // This is our initial placement, we don't have an orientation yet
         if plan.is_initial_placement() {
             controls[0].forward = towards;
             controls[1].forward = -towards;
-            plan.status = RailPlannerStatus::Valid;
+            plan.end_intersection_id = None;
+            plan.end_rail = None;
 
             // If we have no orientation, we get no forward
             if controls[0].pos != controls[1].pos
@@ -219,69 +253,120 @@ fn update_rail_planner(
                 Quat::from_rotation_y(cursor.manual_rotation) * controls[1].forward;
 
             // Check if we hover over another intersection, if so we align our end_forward
+            plan.end_rail = None;
+            plan.end_intersection_id = None;
             let sphere = BoundingSphere::new(cursor.world_pos, 0.1);
             if let Some(x) = intersections.get_intersect_collision(&sphere) {
                 controls[1].pos = x.1.collision.center.into();
                 controls[1].forward = x.1.get_nearest_forward(cursor.world_pos);
                 plan.end_intersection_id = Some(*x.0);
+                *align_to_right = (false, false);
             } else {
-                plan.end_intersection_id = None;
-
                 // Check if we hover over another rail, if so we insert intersection
                 let hits = ray_cast.cast_ray(
                     cursor.ray,
                     &RayCastSettings::default().with_filter(&|e| rails.contains(e)),
                 );
                 if hits.len() > 0 {
-                    if let Ok((target_rail, target_spline)) = rails.get(hits[0].0) {
-                        // (pos, forward) = target.get_nearest_point(&pos);
-                        target_spline
-                            .t_from_pos(&target_spline.curve().sample(0.5).unwrap(), &mut gizmos);
+                    if let Ok((entity, target_rail, target_spline)) = rails.get(hits[0].0) {
+                        plan.end_rail = Some(entity);
+
+                        let (pos, forward) = target_spline
+                            .get_nearest_point(&cursor.build_pos, &mut Some(&mut gizmos));
+                        controls[1].pos = pos;
+
+                        let mut forward = forward.as_vec3();
+
+                        if align_to_right.0 == false {
+                            if forward.dot(controls[1].forward) > 0.0 {
+                                align_to_right.1 = true;
+                            }
+                        }
+                        align_to_right.0 = true;
+
+                        if input.just_pressed(&PlayerBuildAction::Rotate) {
+                            align_to_right.1 = !align_to_right.1;
+                        }
+
+                        if align_to_right.1 == false {
+                            forward = -forward;
+                        }
+
+                        target_spline.split(&pos, &mut Some(&mut gizmos));
+                        controls[1].forward = forward;
+
+                        let start = intersections
+                            .intersections
+                            .get(&target_rail.joints[0].intersection_id)
+                            .unwrap()
+                            .collision
+                            .center;
+                        let end = intersections
+                            .intersections
+                            .get(&target_rail.joints[1].intersection_id)
+                            .unwrap()
+                            .collision
+                            .center;
+                        let min_distance = pos.distance(start.into()).min(pos.distance(end.into()));
+
+                        if min_distance < RAIL_MIN_LENGTH {
+                            plan.status =
+                                RailPlannerStatus::ExtendTooCloseToIntersection(min_distance);
+                        }
                     }
+                } else {
+                    *align_to_right = (false, false);
                 }
             }
 
-            // Validate our plan
-            let length = delta.length();
-            let start_min_angle = if let Some(id) = plan.start_intersection_id {
-                intersections
-                    .intersections
-                    .get(&id)
-                    .unwrap()
-                    .min_angle_relative_to_others(
-                        id,
-                        (controls[1].pos - controls[0].pos).normalize(),
-                        &rails,
-                    )
-            } else {
-                90.
-            };
-            plan.status = if length < RAIL_MIN_LENGTH && plan.end_intersection_id.is_none() {
-                RailPlannerStatus::RailTooShort(delta.length())
-            } else if start_min_angle < RAIL_MIN_DELTA_RADIANS {
-                RailPlannerStatus::CurveTooShallow(start_min_angle)
-            } else {
-                let points: Vec<Vec3> = spline.create_curve_points();
-                let first_segment = points[1] - points[0];
-                let max_angle = points
-                    .iter()
-                    .zip(points.iter().skip(1).zip(points.iter().skip(2)))
-                    .fold(
-                        controls[0].forward.angle_between(first_segment),
-                        |max, (left, (middle, right))| {
-                            let left = middle - left;
-                            let right = right - middle;
-                            let angle = left.angle_between(right);
-                            let max = (angle).max(max);
-                            max
-                        },
-                    );
-                if max_angle > RAIL_MAX_RADIANS {
-                    RailPlannerStatus::CurveTooSharp(max_angle)
+            // Validate our plan, if it's still valid all former checks have passed
+            if plan.status == RailPlannerStatus::Valid {
+                let length = delta.length();
+                let start_min_angle = if let Some(id) = plan.start_intersection_id {
+                    intersections
+                        .intersections
+                        .get(&id)
+                        .unwrap()
+                        .min_angle_relative_to_others(
+                            id,
+                            (controls[1].pos - controls[0].pos).normalize(),
+                            &rails.transmute_lens::<(&Rail, &Spline)>().query(),
+                        )
                 } else {
-                    RailPlannerStatus::Valid
-                }
-            };
+                    90.
+                };
+                plan.status = if length < RAIL_MIN_LENGTH && plan.end_intersection_id.is_none() {
+                    RailPlannerStatus::RailTooShort(delta.length())
+                } else if start_min_angle < RAIL_MIN_DELTA_RADIANS {
+                    RailPlannerStatus::CurveTooShallow(start_min_angle)
+                } else if plan.start_rail.is_some()
+                    && plan.end_rail.is_some()
+                    && plan.start_rail.unwrap() == plan.end_rail.unwrap()
+                {
+                    RailPlannerStatus::ExtendIntoSelf
+                } else {
+                    let points: Vec<Vec3> = spline.create_curve_points();
+                    let first_segment = points[1] - points[0];
+                    let max_angle = points
+                        .iter()
+                        .zip(points.iter().skip(1).zip(points.iter().skip(2)))
+                        .fold(
+                            controls[0].forward.angle_between(first_segment),
+                            |max, (left, (middle, right))| {
+                                let left = middle - left;
+                                let right = right - middle;
+                                let angle = left.angle_between(right);
+                                let max = (angle).max(max);
+                                max
+                            },
+                        );
+                    if max_angle > RAIL_MAX_RADIANS {
+                        RailPlannerStatus::CurveTooSharp(max_angle)
+                    } else {
+                        RailPlannerStatus::Valid
+                    }
+                };
+            }
 
             // We have an intention to build
             if input.just_pressed(&PlayerBuildAction::Interact)
@@ -300,14 +385,48 @@ fn update_rail_planner(
                 // .observe(update_material_on::<Pointer<Down>>(pressed_matl.clone()))
                 // .observe(update_material_on::<Pointer<Up>>(hover_matl.clone()));
 
-                // Update the plan
+                // Rail is inserted at the end because it moves rail, which is still used
+                let start_intersection_id = rail.joints[0].intersection_id;
+                let end_intersection_id = rail.joints[1].intersection_id;
+                ec.insert(rail);
+
+                // If required, split other rails
+                if let Some(start) = plan.start_rail {
+                    let (e, mut r, mut spline) = rails.get_mut(start).unwrap();
+                    r.insert_intersection(
+                        start_intersection_id,
+                        e,
+                        &controls[0].pos,
+                        &mut spline,
+                        &mut c,
+                        &mut intersections,
+                        &asset,
+                        &mut None,
+                    );
+                }
+
+                if let Some(end) = plan.end_rail {
+                    let (e, mut r, mut spline) = rails.get_mut(end).unwrap();
+                    r.insert_intersection(
+                        end_intersection_id,
+                        e,
+                        &controls[1].pos,
+                        &mut spline,
+                        &mut c,
+                        &mut intersections,
+                        &asset,
+                        &mut None,
+                    );
+                }
+
+                // Reset and update the plan
                 controls[0].pos = controls[1].pos;
                 controls[0].forward = -controls[1].forward;
-                plan.start_intersection_id = Some(rail.joints[1].intersection_id);
+                plan.start_intersection_id = Some(end_intersection_id);
+                plan.end_intersection_id = None;
+                plan.start_rail = None;
+                plan.end_rail = None;
                 cursor.manual_rotation = 0.;
-
-                // Rail is inserted at the end because it moves rail, which is still used
-                ec.insert(rail);
             }
         }
         spline.set_controls(controls);
@@ -356,6 +475,14 @@ fn update_rail_planner_status(
                 RailPlannerStatus::RailTooShort(x) => {
                     format!("Rail Too Short {:.2} < {:.2}", x, RAIL_MIN_LENGTH).into()
                 }
+                RailPlannerStatus::ExtendIntoSelf => {
+                    "Can't expand and connect into same rail".into()
+                }
+                RailPlannerStatus::ExtendTooCloseToIntersection(x) => format!(
+                    "Too close to intersection {:.2} < {:.2}",
+                    x, RAIL_MIN_LENGTH
+                )
+                .into(),
             };
 
             let input = input_entries.get_input_entry(&PlayerBuildAction::CycleCurveMode);
