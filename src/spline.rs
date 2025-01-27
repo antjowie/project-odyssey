@@ -100,7 +100,7 @@ impl Spline {
         }
     }
 
-    pub fn create_curve_points(&self) -> Vec<Vec3> {
+    pub fn segments(&self) -> usize {
         let start = self.controls[0].pos;
         let end = self.controls[1].pos;
         let mut segments =
@@ -109,57 +109,55 @@ impl Spline {
             segments = segments.min(max_segments);
         }
 
-        const QUALITY: usize = 3;
-        self.curve.iter_positions(segments * QUALITY).collect()
+        segments
+    }
+
+    /// TODO: Returned positions are naivly uniformly spaced but they read up on below.
+    /// https://pomax.github.io/bezierinfo/#tracing
+    pub fn create_curve_points(&self) -> Vec<Vec3> {
+        self.curve.iter_positions(self.segments()).collect()
     }
 
     /// Returns the nearest position to the spline, for rails this represents
     /// the center of the rail.
-    pub fn get_nearest_point(&self, pos: &Vec3, gizmos: &mut Option<&mut Gizmos>) -> (Vec3, Dir3) {
+    pub fn get_nearest_point(&self, pos: &Vec3) -> Vec3 {
         // Gather all point and do distance checks to see which segment pos is closest to
-        let mut points = self.create_curve_points();
+        let points = self.create_curve_points();
         let (start, end) = points
             .iter()
-            .enumerate()
             .zip(points.iter().skip(1))
             .min_by(|x, y| {
-                let left = pos.distance_squared(*x.0 .1) + pos.distance_squared(*x.1);
-                let right = pos.distance_squared(*y.0 .1) + pos.distance_squared(*y.1);
+                // TODO: We normalize but if we have uniformly spaced points we don't need to
+                let left = (pos.distance_squared(*x.0) + pos.distance_squared(*x.1))
+                    / x.0.distance_squared(*x.1);
+                let right = (pos.distance_squared(*y.0) + pos.distance_squared(*y.1))
+                    / y.0.distance_squared(*y.1);
                 left.total_cmp(&right)
             })
             .unwrap();
 
-        let (index, start) = start;
-
         // Calculate perpendicular vec from pos to rail
-        let forward = Dir3::new((end - start).normalize()).unwrap();
-        let right = forward.cross(Vec3::Y);
-        let to_center = (start - pos).project_onto(right);
+        let forward = end - start;
+        info!("length {}", forward.length());
+        let offset = (pos - start).clamp_length_max(forward.length());
+        start + offset.project_onto(forward)
+        // let right = forward.cross(Vec3::Y);
+        // let to_center = (start - pos).project_onto(right);
 
-        if let Some(gizmos) = gizmos {
-            gizmos.line(*pos, pos + to_center, Color::BLACK);
-        }
+        // pos + to_center
+    }
 
-        // Calculate interpolated forward/right vector
-        let pos = pos + to_center;
-        let t = start.distance(pos) / start.distance(*end);
+    pub fn forward_from_t(&self, t: f32) -> Dir3 {
+        Dir3::new(self.curve.velocity(t).normalize()).unwrap()
+    }
 
-        points.insert(0, self.controls()[0].pos - self.controls()[0].forward);
-        points.push(self.controls()[1].pos - self.controls()[1].forward);
-
-        let to_start = Dir3::new(points[index + 1] - points[index]).unwrap();
-        let from_start = Dir3::new(points[index + 2] - points[index + 1]).unwrap();
-        let from_end = Dir3::new(points[index + 3] - points[index + 2]).unwrap();
-
-        let start_fwd = to_start.slerp(from_start, 0.5);
-        let end_fwd = from_start.slerp(from_end, 0.5);
-
-        (pos, start_fwd.slerp(end_fwd, t))
+    pub fn forward_from_pos(&self, pos: &Vec3) -> Dir3 {
+        Dir3::new(self.curve.velocity(self.t_from_pos(pos)).normalize()).unwrap()
     }
 
     /// Create left and right spline with pos as center
     pub fn split(&self, pos: &Vec3, gizmos: &mut Option<&mut Gizmos>) -> (Spline, Spline) {
-        let pos = self.get_nearest_point(pos, gizmos).0;
+        let pos = self.get_nearest_point(pos);
         let t = self.t_from_pos(&pos);
         let control_points = self.create_curve_control_points();
         let s = control_points[0][0];
@@ -221,31 +219,32 @@ impl Spline {
     }
 
     pub fn t_from_pos(&self, pos: &Vec3) -> f32 {
-        let points = self.create_curve_points();
-        let c = self.get_nearest_point(pos, &mut None).0;
+        let c = self.get_nearest_point(pos);
 
-        let mut t = 0.0;
-        for (a, b) in points.iter().zip(points.iter().skip(1)) {
-            let ac = a.distance(c);
-            let cb = c.distance(*b);
-            let ab = a.distance(*b);
-
-            // TODO: This is a very big tolerance. I think we need a better
-            // method for this, I read about Newton-Rhapson method with jacobian
-            if (ac + cb) - ab < 0.1 {
-                t += ac / ab;
-                return t / (points.len() - 1) as f32;
-            } else {
-                t += 1.0;
+        // TODO: Courtesy of Copilot, though I should have a look at
+        // https://pomax.github.io/bezierinfo/#tracing
+        let mut t = 0.5; // Initial guess
+        for _ in 0..100 {
+            let b = self.curve.position(t);
+            let db_dt = self.curve.velocity(t);
+            let d = b - c;
+            let f = d.dot(db_dt);
+            let df_dt = db_dt.dot(db_dt) + d.dot(self.curve.acceleration(t));
+            t -= f / df_dt;
+            if f.abs() < 1e-6 {
+                break;
             }
         }
 
-        // Pos was not on the spline
-        assert!(
-            false,
-            "Unable to calculate t from pos, unless pos is not on spline this is an error"
-        );
-        0.0
+        if t < 0.0 || t > 1.0 {
+            warn!(
+                "T ({}) was outside of domain, clamping it to prevent crash",
+                t
+            );
+            t = t.clamp(0.0, 1.0);
+        }
+
+        t
     }
 }
 
@@ -299,7 +298,11 @@ fn update_spline_mesh(
             }
         };
 
-        let mut points = spline.create_curve_points();
+        const QUALITY: usize = 1;
+        let mut points = spline
+            .curve()
+            .iter_positions(spline.segments() * QUALITY)
+            .collect::<Vec<Vec3>>();
         // Insert one element after last, imagine we have 3 samples
         // 1. 0->1 == Insert vertices
         // 2. 1->2 == Insert vertices
@@ -340,11 +343,11 @@ fn update_spline_mesh(
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normal);
 
-        let mut indices = Vec::<u16>::new();
+        let mut indices = Vec::<u32>::new();
         indices.reserve(quads * 6);
 
         for i in 0..quads {
-            let offset = (i * 2) as u16;
+            let offset = (i * 2) as u32;
             indices.append(
                 &mut [
                     offset + 0,
@@ -368,7 +371,7 @@ fn update_spline_mesh(
         //     indices
         // );
 
-        mesh.insert_indices(Indices::U16(indices));
+        mesh.insert_indices(Indices::U32(indices));
 
         // At this moment check if our entity still exists, otherwise we just drop it
         if let Some(mut ec) = c.get_entity(entity) {

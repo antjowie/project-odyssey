@@ -227,7 +227,7 @@ impl Rail {
         distance: f32,
         spline: &Spline,
     ) -> TraverseResult {
-        let (_, right) = spline.get_nearest_point(&spline.curve().sample(t).unwrap(), &mut None);
+        let right = spline.forward_from_t(t);
         let current_t = t;
         let delta_t = distance / spline.curve_length();
 
@@ -253,7 +253,7 @@ impl Rail {
                 TraverseResult::End {
                     t: new_t,
                     pos,
-                    forward: spline.get_nearest_point(&pos, &mut None).1,
+                    forward: spline.forward_from_t(new_t),
                 }
             }
         } else {
@@ -277,7 +277,7 @@ impl Rail {
                 TraverseResult::End {
                     t: new_t,
                     pos,
-                    forward: -spline.get_nearest_point(&pos, &mut None).1,
+                    forward: -spline.forward_from_t(new_t),
                 }
             }
         }

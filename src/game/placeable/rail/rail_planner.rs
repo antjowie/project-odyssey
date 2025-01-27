@@ -164,8 +164,9 @@ fn update_intitial_rail_planner(
             if let Ok((e, target_rail, target_spline)) = rails.get(hits[0].0) {
                 plan.start_rail = Some(e);
 
-                let (spline_pos, forward) =
-                    target_spline.get_nearest_point(&cursor.build_pos, &mut None);
+                let spline_pos = target_spline.get_nearest_point(&cursor.build_pos);
+                let forward = target_spline.forward_from_pos(&spline_pos);
+
                 pos = spline_pos;
                 let mut forward = forward.as_vec3();
 
@@ -307,8 +308,8 @@ fn update_rail_planner(
                     if let Ok((entity, target_rail, target_spline)) = rails.get(hits[0].0) {
                         plan.end_rail = Some(entity);
 
-                        let (pos, forward) = target_spline
-                            .get_nearest_point(&cursor.build_pos, &mut Some(&mut gizmos));
+                        let pos = target_spline.get_nearest_point(&cursor.build_pos);
+                        let forward = target_spline.forward_from_pos(&pos);
                         controls[1].pos = pos;
 
                         let mut forward = forward.as_vec3();

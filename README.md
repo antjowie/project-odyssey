@@ -20,6 +20,7 @@ Rail editor
 - [ ] Add vertical rail building
   - [x] Add proper raycasting
 - [ ] Add copy pasta? 
+- [ ] Return positions uniformly spaced
 
 Train
 - [x] Support placing and creating different things on rails
@@ -38,7 +39,7 @@ Pathfinding
 - [ ] Generate nav graph for rail
 - [ ] Support setting destinations
   - Need to somehow know which node depending on which segment we hovered
-- [ ] Add trafic control via signals
+- [ ] Add traffic control via signals
   - I'm thinking of each link having a traffic id which maps to a map
   - Then in the map we track which trains are on which tracks, so we can use this to calc weights and such
 

@@ -158,7 +158,7 @@ fn handle_train_placement(
     mut q: Query<(&mut PlayerCursor, &ActionState<PlayerBuildAction>)>,
     mut preview: Query<(&mut Transform, &mut PlaceablePreview)>,
     rails: Query<&Spline, With<Rail>>,
-    // mut gizmos: Gizmos,
+    mut gizmos: Gizmos,
     mut ray_cast: MeshRayCast,
     mut previous_had_hit: Local<bool>,
     mut align_to_right: Local<bool>,
@@ -181,8 +181,13 @@ fn handle_train_placement(
     let mut target_spline = None;
     if hits.len() > 0 {
         if let Ok(spline) = rails.get(hits[0].0) {
-            (pos, forward) = spline.get_nearest_point(&pos, &mut None);
+            pos = spline.get_nearest_point(&pos);
+            forward = spline.forward_from_pos(&pos);
             cursor.manual_rotation = 0.0;
+            gizmos.line(cursor.build_pos + Vec3::Y, pos + Vec3::Y, RED_500);
+            for point in spline.create_curve_points() {
+                gizmos.sphere(point, 0.2, RED_500);
+            }
 
             if !*previous_had_hit {
                 *align_to_right = forward.dot(preview.0.forward().as_vec3()) > 0.;
@@ -210,7 +215,7 @@ fn handle_train_placement(
     preview.0.translation = pos;
     preview.0.look_at(pos + forward.as_vec3(), Vec3::Y);
 
-    // Overlap check
+    // Overlap check for other trains
     let can_place = *previous_had_hit
         && spatial_query
             .shape_intersections(
