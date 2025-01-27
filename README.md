@@ -49,6 +49,7 @@ Pathfinding
   - Then in the map we track which trains are on which tracks, so we can use this to calc weights and such
 
 General gameplay
+- [x] Generic cursor feedback
 - [ ] Add save and load
 
 ### Build

@@ -6,6 +6,7 @@ use bevy::{
 };
 use bevy_egui::{egui, EguiContexts};
 use bounding::BoundingVolume;
+use cursor_feedback::CursorFeedback;
 
 use crate::spline::*;
 use rail_planner::*;
@@ -452,12 +453,17 @@ fn on_rail_destroy(
     trains: Query<&Train>,
     mut c: Commands,
     mut intersections: ResMut<RailIntersections>,
+    mut feedback: ResMut<CursorFeedback>,
 ) {
     // Check if there are no trains on this rail
-    // TODO: Add user feedback for this, need to generalize the RailPlannerStatusFeedback struct
     let entity = trigger.entity();
     for train in trains.iter() {
         if train.rail == entity {
+            feedback.entries.push(
+                CursorFeedbackData::default()
+                    .with_error("Trains are on rail".into())
+                    .with_duration(3.0),
+            );
             return;
         }
     }

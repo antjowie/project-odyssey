@@ -14,10 +14,12 @@ use bevy::{math::*, prelude::*, window::PrimaryWindow};
 use crate::camera::*;
 use crate::input::*;
 use crate::util::*;
+use cursor_feedback::*;
 use placeable::*;
 use player::*;
 use world::*;
 
+pub mod cursor_feedback;
 pub mod placeable;
 pub mod player;
 pub mod world;
@@ -28,6 +30,7 @@ pub struct GamePlugin;
 
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
+        app.add_plugins(cursor_feedback_plugin);
         app.add_plugins(placeable_plugin);
         app.add_plugins(player_plugin);
         app.add_plugins(world_plugin);

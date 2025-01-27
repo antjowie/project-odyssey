@@ -1,25 +1,23 @@
 //! Logic responsible for generating a preview of what RailBuilding will be built
 use super::*;
 use bevy::math::vec3;
+use cursor_feedback::*;
 use std::f32::consts::FRAC_PI_2;
 
 pub fn rail_planner_plugin(app: &mut App) {
-    app.add_systems(Startup, setup_rail_planner_feedback_text);
     app.add_systems(
         Update,
-        (
-            update_rail_planner_status.run_if(any_with_component::<RailPlannerStatusFeedback>),
-            (
-                update_intitial_rail_planner.run_if(not(any_with_component::<RailPlanner>)),
-                update_rail_planner,
-                draw_rail_planner,
-            )
-                .run_if(
-                    // We use any with compnent as we assume it exists on some of the funcs
-                    any_with_component::<InputContext<PlayerBuildAction>>
-                        .and(is_placeable_preview(Placeable::Rail)),
-                ),
-        ),
+        ((
+            update_intitial_rail_planner.run_if(not(any_with_component::<RailPlanner>)),
+            update_rail_planner_feedback.run_if(any_with_component::<RailPlanner>),
+            update_rail_planner,
+            draw_rail_planner,
+        )
+            .run_if(
+                // We use any with compnent as we assume it exists on some of the funcs
+                any_with_component::<InputContext<PlayerBuildAction>>
+                    .and(is_placeable_preview(Placeable::Rail)),
+            ),),
     );
 }
 
@@ -70,11 +68,6 @@ impl RailPlanner {
     }
 }
 
-/// Text in world space representing the status
-#[derive(Component)]
-#[require(Text, TextFont(|| default_text_font()))]
-struct RailPlannerStatusFeedback;
-
 #[derive(Default, PartialEq, Debug, Copy, Clone)]
 pub enum RailPlannerStatus {
     #[default]
@@ -111,10 +104,6 @@ fn handle_build_state_cancel_event(
     }
 }
 
-fn setup_rail_planner_feedback_text(mut c: Commands) {
-    c.spawn(RailPlannerStatusFeedback);
-}
-
 fn update_intitial_rail_planner(
     mut c: Commands,
     q: Query<Entity, With<RailPlanner>>,
@@ -126,6 +115,7 @@ fn update_intitial_rail_planner(
     rails: Query<(Entity, &Rail, &Spline), Without<PlaceablePreview>>,
     mut align_to_right: Local<bool>,
     mut gizmos: Gizmos,
+    mut feedback: ResMut<CursorFeedback>,
 ) {
     // Hacky, but we want to ignore placing this on the switch to view mode
     for ev in event.read() {
@@ -205,6 +195,10 @@ fn update_intitial_rail_planner(
                 // TODO: Notify user of this validation failure
                 if min_distance < RAIL_MIN_LENGTH {
                     plan.status = RailPlannerStatus::ExtendTooCloseToIntersection(min_distance);
+                    feedback.entries.push(
+                        CursorFeedbackData::default()
+                            .with_error("Too close to intersection".into()),
+                    );
                 }
 
                 gizmos
@@ -292,7 +286,13 @@ fn update_rail_planner(
             plan.end_rail = None;
             plan.end_intersection_id = None;
             let sphere = BoundingSphere::new(cursor.world_pos, 0.1);
-            if let Some(x) = intersections.get_intersect_collision(&sphere) {
+            let intersection = intersections.get_intersect_collision(&sphere);
+            if intersection.is_some()
+                && plan
+                    .start_intersection_id
+                    .is_none_or(|x| intersection.unwrap().0 != &x)
+            {
+                let x = intersection.unwrap();
                 controls[1].pos = x.1.collision.center.into();
                 controls[1].forward = x.1.get_nearest_forward(cursor.world_pos);
                 plan.end_intersection_id = Some(*x.0);
@@ -472,29 +472,26 @@ fn update_rail_planner(
     });
 }
 
-fn update_rail_planner_status(
-    feedback: Single<(&mut Text, &mut Node), With<RailPlannerStatusFeedback>>,
+fn update_rail_planner_feedback(
+    mut feedback: ResMut<CursorFeedback>,
     mut plan: Query<(&RailPlanner, &mut PlaceablePreview)>,
     cursor: Query<&PlayerCursor>,
     input_entries: Res<AllInputContextEntries>,
 ) {
     let cursor = cursor.single();
+    let mut feedback_entry = CursorFeedbackData::default();
 
-    let (mut text, mut node) = feedback.into_inner();
-
-    if plan.is_empty() {
-        text.0.clear();
-    } else {
+    if !plan.is_empty() {
         let (plan, mut preview) = plan.single_mut();
         if plan.is_initial_placement() {
-            text.0 = "Specifying initial orientation".into();
+            feedback_entry.status = "Specifying initial orientation".into();
             preview.valid = true;
         } else {
             preview.valid = false;
-            text.0 = match plan.status {
+            feedback_entry.error = match plan.status {
                 RailPlannerStatus::Valid => {
                     preview.valid = true;
-                    "".into()
+                    feedback_entry.error
                 }
                 RailPlannerStatus::CurveTooSharp(x) => format!(
                     "Curve Too Sharp {:.2} > {:.2}",
@@ -533,13 +530,17 @@ fn update_rail_planner_status(
                 ""
             };
 
-            text.0 += format!("\n<{}> CurveMode {}", input, cursor.curve_mode).as_str();
+            if plan.end_intersection_id.is_some() == true || plan.end_rail.is_some() {
+                feedback_entry.status = "Fixed rotation to connect".into();
+            } else {
+                feedback_entry.status =
+                    format!("<{}> CurveMode {}", input, cursor.curve_mode).into();
+            }
         }
     }
 
-    if let Some(pos) = cursor.screen_pos {
-        node.left = Val::Px(pos.x);
-        node.top = Val::Px(pos.y - 48.);
+    if feedback_entry.status.is_empty() == false || feedback_entry.error.is_empty() == false {
+        feedback.entries.push(feedback_entry);
     }
 }
 
