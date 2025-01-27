@@ -13,13 +13,7 @@ Rail editor
 - [x] Gen collider for curve
 - [x] Add segment deconstruction
 - [ ] Add intersection deconstruction
-  - I don't think this is possible with current systems, as too many edge cases
-  - are introduced. Current system relies directly on splines, but it might be
-  - better to think of a "preset matching" system next time, so we can easily
-  - move things around. 
-  - Issue is that a rail is assumed to be 1 curve, so removing an intersection
-  - means we need to merge 2 curves, we could then split this joined curve 75%
-  - through, which brings us in all kinds of weird situations.
+  - I don't think this is possible with current systems, as too many edge cases are introduced. Current system relies directly on splines, but it might be better to think of a "preset matching" system next time, so we can easily move things around.  Issue is that a rail is assumed to be 1 curve, so removing an intersection means we need to merge 2 curves, we could then split this joined curve 75% through, which brings us in all kinds of weird situations.
 - [x] Improve joint expansion to intersection instead of seperate joints
 - [x] Insert rail into arbitrary area of rail
 - [x] Expand rail from arbitrary area of rail
