@@ -1,10 +1,9 @@
+use super::*;
+use crate::spline::Spline;
 use avian3d::prelude::*;
 use bevy_rand::{global::GlobalEntropy, prelude::*};
 use rail::Rail;
 use rand_core::RngCore;
-
-use super::*;
-use crate::spline::Spline;
 
 pub(super) fn train_plugin(app: &mut App) {
     app.add_systems(Startup, load_train_asset);
@@ -175,18 +174,28 @@ fn handle_train_placement(
         cursor.ray,
         &RayCastSettings::default().with_filter(&|e| rails.contains(e)),
     );
+
     let mut pos = cursor.build_pos;
     let mut forward = preview.0.forward();
     let mut target_rail = None;
     let mut target_spline = None;
+
+    // Test if we can resolve arbitrary pos for rail
+    // for spline in rails.iter() {
+    //     let t = spline.t_from_pos(&pos);
+    //     let pos = spline.position(t);
+    //     gizmos.line(cursor.build_pos + Vec3::Y, pos + Vec3::Y, RED_500);
+    // }
+
     if hits.len() > 0 {
         if let Ok(spline) = rails.get(hits[0].0) {
-            pos = spline.get_nearest_point(&pos);
-            forward = spline.forward_from_pos(&pos);
+            let t = spline.t_from_pos(&pos);
+            pos = spline.position(t);
+            forward = spline.forward(t);
             cursor.manual_rotation = 0.0;
             gizmos.line(cursor.build_pos + Vec3::Y, pos + Vec3::Y, RED_500);
-            for point in spline.create_curve_points() {
-                gizmos.sphere(point, 0.2, RED_500);
+            for point in spline.curve_points() {
+                gizmos.sphere(Isometry3d::from_translation(*point), 0.2, RED_500);
             }
 
             if !*previous_had_hit {

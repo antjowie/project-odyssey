@@ -7,6 +7,7 @@ use bevy::{
 use bevy_egui::{egui, EguiContexts};
 use bounding::BoundingVolume;
 use cursor_feedback::CursorFeedback;
+use uuid::Uuid;
 
 use crate::spline::*;
 use rail_planner::*;
@@ -150,7 +151,6 @@ impl Rail {
                 .is_none()
             {
                 intersections.intersections.remove(&intersection_id);
-                intersections.id_provider.return_id(intersection_id);
             } else {
                 intersection.left.sort_by(|a, b| b.cmp(a));
                 intersection.right.sort_by(|a, b| b.cmp(a));
@@ -165,7 +165,7 @@ impl Rail {
     /// When we insert an intersection we remove the existing rail, split it into 2 and insert an intersection inbetween
     pub fn insert_intersection(
         &mut self,
-        middle_intersection_id: u32,
+        middle_intersection_id: Uuid,
         self_entity: Entity,
         pos: &Vec3,
         spline: &mut Spline,
@@ -227,7 +227,7 @@ impl Rail {
         distance: f32,
         spline: &Spline,
     ) -> TraverseResult {
-        let right = spline.forward_from_t(t);
+        let right = spline.forward(t);
         let current_t = t;
         let delta_t = distance / spline.curve_length();
 
@@ -243,17 +243,11 @@ impl Rail {
                     intersection_id: self.joints[1].intersection_id,
                 }
             } else {
-                let pos = spline.curve().sample(new_t).expect(
-                    format!(
-                        "{} is outside of domain curr {} delta {}",
-                        new_t, current_t, delta_t
-                    )
-                    .as_str(),
-                );
+                let pos = spline.position(new_t);
                 TraverseResult::End {
                     t: new_t,
                     pos,
-                    forward: spline.forward_from_t(new_t),
+                    forward: spline.forward(new_t),
                 }
             }
         } else {
@@ -267,17 +261,11 @@ impl Rail {
                     intersection_id: self.joints[0].intersection_id,
                 }
             } else {
-                let pos = spline.curve().sample(new_t).expect(
-                    format!(
-                        "{} is outside of domain curr {} delta {}",
-                        new_t, current_t, delta_t
-                    )
-                    .as_str(),
-                );
+                let pos = spline.position(new_t);
                 TraverseResult::End {
                     t: new_t,
                     pos,
-                    forward: -spline.forward_from_t(new_t),
+                    forward: -spline.forward(new_t),
                 }
             }
         }
@@ -293,26 +281,26 @@ pub enum TraverseResult {
         pos: Vec3,
         forward: Dir3,
         remaining_distance: f32,
-        intersection_id: u32,
+        intersection_id: Uuid,
     },
 }
 /// Represents the data for the rail end points
 pub struct RailJoint {
-    pub intersection_id: u32,
+    pub intersection_id: Uuid,
 }
 
 #[derive(Resource, Default)]
 pub struct RailIntersections {
-    pub intersections: HashMap<u32, RailIntersection>,
-    pub id_provider: IdProvider,
+    pub intersections: HashMap<Uuid, RailIntersection>,
+    pub used_uuids: HashSet<Uuid>,
 }
 
 impl RailIntersections {
     pub fn get_connected_intersections(
         &self,
-        intersection_id: u32,
+        intersection_id: Uuid,
         rails: &Query<&Rail>,
-    ) -> Vec<u32> {
+    ) -> Vec<Uuid> {
         let mut collect = HashSet::new();
         self.collect_connected_intersections(intersection_id, rails, &mut collect);
         collect.into_iter().collect()
@@ -320,9 +308,9 @@ impl RailIntersections {
 
     fn collect_connected_intersections(
         &self,
-        intersection_id: u32,
+        intersection_id: Uuid,
         rails: &Query<&Rail>,
-        collect: &mut HashSet<u32>,
+        collect: &mut HashSet<Uuid>,
     ) {
         collect.insert(intersection_id);
         let root = self.intersections.get(&intersection_id).unwrap();
@@ -350,17 +338,20 @@ impl RailIntersections {
     pub fn get_intersect_collision(
         &self,
         sphere: &BoundingSphere,
-    ) -> Option<(&u32, &RailIntersection)> {
+    ) -> Option<(&Uuid, &RailIntersection)> {
         self.intersections
             .iter()
             .find(|x| x.1.collision.intersects(sphere))
     }
 
-    pub fn create_new_intersection(&mut self, pos: Vec3, right_forward: Vec3) -> u32 {
+    pub fn create_new_intersection(&mut self, pos: Vec3, right_forward: Vec3) -> Uuid {
         const SIZE: f32 = 2.5;
-        let idx = self.id_provider.get_available_id();
+        let mut uuid = Uuid::new_v4();
+        while self.used_uuids.contains(&uuid) {
+            uuid = Uuid::new_v4();
+        }
         self.intersections.insert(
-            idx,
+            uuid,
             RailIntersection {
                 right_forward,
                 left: [None; RAIL_CURVES_MAX],
@@ -368,8 +359,9 @@ impl RailIntersections {
                 collision: BoundingSphere::new(pos, SIZE),
             },
         );
+        self.used_uuids.insert(uuid);
 
-        idx
+        uuid
     }
 }
 
@@ -398,7 +390,7 @@ impl RailIntersection {
 
     pub fn min_angle_relative_to_others(
         &self,
-        intersection_id: u32,
+        intersection_id: Uuid,
         dir: Vec3,
         rails: &Query<(&Rail, &Spline)>,
     ) -> f32 {
@@ -492,9 +484,7 @@ fn debug_rail_path(
 ) {
     q.into_iter().for_each(|(spline, picking)| {
         // Draw line
-        let curve = spline.curve();
-        const STEPS: usize = 10;
-        gizmos.linestrip(curve.iter_positions(STEPS), Color::WHITE);
+        gizmos.linestrip(spline.curve_points().clone(), Color::WHITE);
 
         // Draw forwards
         gizmos.line(

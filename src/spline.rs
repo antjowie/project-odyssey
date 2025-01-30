@@ -1,5 +1,9 @@
+use core::f32;
+
+use avian3d::position;
 use bevy::{
     asset::RenderAssetUsages,
+    color::palettes::tailwind::{BLUE_500, GREEN_500, RED_500},
     prelude::*,
     render::mesh::{Indices, MeshAabb},
 };
@@ -10,9 +14,11 @@ impl Plugin for SplinePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Update, update_spline_mesh);
         app.register_type::<SplineMesh>();
+        app.add_systems(Update, debug_spline);
     }
 }
 
+const LUT_SAMPLES: usize = 32;
 #[derive(Component, Clone, Reflect, PartialEq)]
 pub struct Spline {
     controls: [SplineControl; 2],
@@ -21,10 +27,23 @@ pub struct Spline {
     /// we lose control in these kinds of scenarios, it might be better to just go for a more granular build mode
     /// where the user specified their own control points, maybe even allow modifying control points of exisiting rails
     controls_override: Option<[Vec3; 2]>,
+    /// Segments define how many curve_points to generate
     pub min_segment_length: f32,
-    pub max_segments: Option<usize>,
     curve: CubicCurve<Vec3>,
+    /// Uniformly spaced points in the curve, length is controlled by min segment length and max segments
+    curve_points: Vec<Vec3>,
+    /// https://pomax.github.io/bezierinfo/#tracing
+    lut: [SplineLUT; LUT_SAMPLES],
     curve_length: f32,
+}
+
+#[derive(Default, Reflect, Clone, Copy, PartialEq)]
+struct SplineLUT {
+    t: f32,
+    /// Distance between this and previous pos
+    distance: f32,
+    distance_along_curve: f32,
+    pos: Vec3,
 }
 
 impl Default for Spline {
@@ -33,10 +52,11 @@ impl Default for Spline {
             controls: Default::default(),
             controls_override: None,
             min_segment_length: 10.0,
-            max_segments: None,
             curve: CubicBezier::new([[Vec3::ZERO, Vec3::ZERO, Vec3::ZERO, Vec3::ZERO]])
                 .to_curve()
                 .unwrap(),
+            curve_points: vec![],
+            lut: [SplineLUT::default(); LUT_SAMPLES],
             curve_length: 0.0,
         }
     }
@@ -45,6 +65,14 @@ impl Default for Spline {
 impl Spline {
     pub fn controls(&self) -> &[SplineControl; 2] {
         &self.controls
+    }
+
+    pub fn curve_points(&self) -> &Vec<Vec3> {
+        &self.curve_points
+    }
+
+    pub fn curve_length(&self) -> f32 {
+        self.curve_length
     }
 
     pub fn set_controls(&mut self, controls: [SplineControl; 2]) {
@@ -62,25 +90,38 @@ impl Spline {
             .to_curve()
             .unwrap();
 
-        let points = self.create_curve_points();
-        self.curve_length = points
+        // Populate LUT and curve length
+        self.curve_length = 0.0;
+        let points: Vec<Vec3> = self.curve.iter_positions(LUT_SAMPLES - 1).collect();
+        points
             .iter()
             .zip(points.iter().skip(1))
-            .fold(0.0, |acc, (start, end)| acc + start.distance(*end));
-    }
+            .enumerate()
+            .for_each(|(i, (left, right))| {
+                let i = i + 1;
+                let t = i as f32 / (LUT_SAMPLES - 1) as f32;
+                let distance = left.distance(*right);
+                self.curve_length += distance;
+                self.lut[i] = SplineLUT {
+                    t,
+                    distance,
+                    distance_along_curve: self.curve_length,
+                    pos: *right,
+                };
+            });
+        self.lut[0].pos = points[0];
 
-    pub fn curve(&self) -> &CubicCurve<Vec3> {
-        &self.curve
-    }
-
-    pub fn curve_length(&self) -> f32 {
-        self.curve_length
-    }
-
-    pub fn with_max_segments(mut self, max_segments: usize) -> Self {
-        self.max_segments = Some(max_segments);
-        self.calculate_curve();
-        self
+        // Populate curve points
+        let segments = ((self.curve_length / self.min_segment_length).round() as usize).max(2);
+        self.curve_points.clear();
+        self.curve_points.reserve(segments);
+        self.curve_points.push(self.lut[0].pos);
+        let segment_length = self.curve_length / segments as f32;
+        for i in 0..segments {
+            self.curve_points
+                .push(self.position(self.t_from_distance(i as f32 * segment_length)));
+        }
+        self.curve_points.push(self.lut[LUT_SAMPLES - 1].pos);
     }
 
     pub fn create_curve_control_points(&self) -> [[Vec3; 4]; 1] {
@@ -100,65 +141,147 @@ impl Spline {
         }
     }
 
-    pub fn segments(&self) -> usize {
-        let start = self.controls[0].pos;
-        let end = self.controls[1].pos;
-        let mut segments =
-            ((start.distance(end) / self.min_segment_length).round() as usize).max(2);
-        if let Some(max_segments) = self.max_segments {
-            segments = segments.min(max_segments);
+    pub fn t_from_distance(&self, distance: f32) -> f32 {
+        let mut idx = 0;
+        for (i, x) in self.lut.iter().enumerate() {
+            idx = i;
+            if x.distance_along_curve > distance {
+                break;
+            }
         }
 
-        segments
-    }
+        // Out of bounds, so return the bound
+        if idx == 0 {
+            return self.lut[idx].t;
+        }
+        let l = self.lut[idx - 1];
+        let r = self.lut[idx];
 
-    /// TODO: Returned positions are naivly uniformly spaced but they read up on below.
-    /// https://pomax.github.io/bezierinfo/#tracing
-    pub fn create_curve_points(&self) -> Vec<Vec3> {
-        self.curve.iter_positions(self.segments()).collect()
+        let range = r.distance_along_curve - l.distance_along_curve;
+        let ratio = (distance - l.distance_along_curve) / range;
+
+        // Interpolate to a better distance -> t relation
+        let mut t = l.t.lerp(r.t, ratio);
+        let mut interval = ratio.min(1.0 - ratio);
+        let pos = self.position(t);
+        let distance_to_t = pos.distance(l.pos);
+        let mut distance_delta_squared = distance - distance_to_t;
+        distance_delta_squared = distance_delta_squared * distance_delta_squared;
+        let distance_threshold = 1.0e-2 as f32;
+        // let mut iter = 0;
+        // Depending on our LUT samples, we might already be close enough and have no need
+        // to further interpolate
+        for _ in 0..100 {
+            // iter += 1;
+            if distance_delta_squared.abs() < distance_threshold {
+                break;
+            }
+
+            let lmt = t - interval * 0.5;
+            let rmt = t + interval * 0.5;
+            let last_t = t;
+            for x in [lmt, rmt] {
+                let dist = pos.distance_squared(self.position(x));
+
+                if dist < distance_delta_squared {
+                    t = x;
+                    distance_delta_squared = dist;
+                }
+            }
+
+            // This means our guess is still the best, lower so we hit threshold
+            if t == last_t {
+                interval *= 0.5;
+            } else {
+                interval = (t - last_t).abs();
+            }
+        }
+        // info!("Did {iter} iterations");
+
+        t
     }
 
     /// Returns the nearest position to the spline, for rails this represents
     /// the center of the rail.
-    pub fn get_nearest_point(&self, pos: &Vec3) -> Vec3 {
-        // Gather all point and do distance checks to see which segment pos is closest to
-        let points = self.create_curve_points();
-        let (start, end) = points
-            .iter()
-            .zip(points.iter().skip(1))
-            .min_by(|x, y| {
-                // TODO: We normalize but if we have uniformly spaced points we don't need to
-                let left = (pos.distance_squared(*x.0) + pos.distance_squared(*x.1))
-                    / x.0.distance_squared(*x.1);
-                let right = (pos.distance_squared(*y.0) + pos.distance_squared(*y.1))
-                    / y.0.distance_squared(*y.1);
-                left.total_cmp(&right)
-            })
-            .unwrap();
+    /// Returns (t, pos)
+    pub fn t_from_pos(&self, pos: &Vec3) -> f32 {
+        // https://pomax.github.io/bezierinfo/#projections
+        let mut min_idx = 0;
+        let mut min_dist = f32::MAX;
+        for (i, x) in self.lut.iter().enumerate() {
+            let dist = pos.distance_squared(x.pos);
+            if dist < min_dist {
+                min_idx = i;
+                min_dist = dist;
+            }
+        }
 
-        // Calculate perpendicular vec from pos to rail
-        let forward = end - start;
-        info!("length {}", forward.length());
-        let offset = (pos - start).clamp_length_max(forward.length());
-        start + offset.project_onto(forward)
-        // let right = forward.cross(Vec3::Y);
-        // let to_center = (start - pos).project_onto(right);
+        // Interpolate to a closer value
+        let mut t = self.lut[min_idx].t;
+        let lt = if min_idx == 0 {
+            0.0
+        } else {
+            self.lut[min_idx - 1].t
+        };
+        let rt = if min_idx == LUT_SAMPLES - 1 {
+            1.0
+        } else {
+            self.lut[min_idx + 1].t
+        };
+        let mut interval = (t - lt).max(rt - t);
+        let interval_threshold = 1.0e-2 / self.curve_points.len() as f32;
+        // let mut iter = 0;
+        for _ in 0..100 {
+            // iter += 1;
+            if interval < interval_threshold {
+                break;
+            }
 
-        // pos + to_center
+            let lmt = t - interval * 0.5;
+            let rmt = t + interval * 0.5;
+            let last_t = t;
+            for x in [lmt, rmt] {
+                let dist = pos.distance_squared(self.position(x));
+                if dist < min_dist {
+                    t = x;
+                    min_dist = dist;
+                }
+            }
+
+            // This means our guess is still the best, lower so we hit threshold
+            if t == last_t {
+                interval *= 0.5;
+            } else {
+                interval = (t - last_t).abs();
+            }
+        }
+        // info!("Did {iter} iterations");
+
+        if t < 0.0 || t > 1.0 {
+            t = t.clamp(0.0, 1.0);
+        }
+        if interval > interval_threshold {
+            warn!(
+                "Ended up with a t {} (last interval {}) which is above our threshold {}. Reduce precision",
+                t, interval, interval_threshold
+            );
+        }
+
+        t
     }
 
-    pub fn forward_from_t(&self, t: f32) -> Dir3 {
+    pub fn position(&self, t: f32) -> Vec3 {
+        self.curve.position(t)
+    }
+
+    pub fn forward(&self, t: f32) -> Dir3 {
         Dir3::new(self.curve.velocity(t).normalize()).unwrap()
-    }
-
-    pub fn forward_from_pos(&self, pos: &Vec3) -> Dir3 {
-        Dir3::new(self.curve.velocity(self.t_from_pos(pos)).normalize()).unwrap()
     }
 
     /// Create left and right spline with pos as center
     pub fn split(&self, pos: &Vec3, gizmos: &mut Option<&mut Gizmos>) -> (Spline, Spline) {
-        let pos = self.get_nearest_point(pos);
         let t = self.t_from_pos(&pos);
+        let pos = self.curve.sample(t).unwrap();
         let control_points = self.create_curve_control_points();
         let s = control_points[0][0];
         let sc = control_points[0][1];
@@ -217,35 +340,6 @@ impl Spline {
 
         (start_spline, end_spline)
     }
-
-    pub fn t_from_pos(&self, pos: &Vec3) -> f32 {
-        let c = self.get_nearest_point(pos);
-
-        // TODO: Courtesy of Copilot, though I should have a look at
-        // https://pomax.github.io/bezierinfo/#tracing
-        let mut t = 0.5; // Initial guess
-        for _ in 0..100 {
-            let b = self.curve.position(t);
-            let db_dt = self.curve.velocity(t);
-            let d = b - c;
-            let f = d.dot(db_dt);
-            let df_dt = db_dt.dot(db_dt) + d.dot(self.curve.acceleration(t));
-            t -= f / df_dt;
-            if f.abs() < 1e-6 {
-                break;
-            }
-        }
-
-        if t < 0.0 || t > 1.0 {
-            warn!(
-                "T ({}) was outside of domain, clamping it to prevent crash",
-                t
-            );
-            t = t.clamp(0.0, 1.0);
-        }
-
-        t
-    }
 }
 
 /// Represents the start and end of a spline, also knows as knots
@@ -275,6 +369,17 @@ impl Default for SplineMesh {
     }
 }
 
+fn debug_spline(q: Query<&Spline>, mut gizmos: Gizmos) {
+    q.iter().for_each(|spline| {
+        let lut: Vec<Vec3> = spline.lut.iter().map(|x| x.pos).collect();
+        gizmos.linestrip(lut.clone(), GREEN_500);
+        for pos in lut {
+            gizmos.sphere(Isometry3d::from_translation(pos.clone()), 0.2, BLUE_500);
+        }
+        gizmos.linestrip(spline.curve_points().clone(), RED_500);
+    });
+}
+
 fn update_spline_mesh(
     mut c: Commands,
     mut q: Query<(Entity, &mut Mesh3d, &Spline, &mut SplineMesh), Changed<Spline>>,
@@ -298,11 +403,7 @@ fn update_spline_mesh(
             }
         };
 
-        const QUALITY: usize = 1;
-        let mut points = spline
-            .curve()
-            .iter_positions(spline.segments() * QUALITY)
-            .collect::<Vec<Vec3>>();
+        let mut points = spline.curve_points().clone();
         // Insert one element after last, imagine we have 3 samples
         // 1. 0->1 == Insert vertices
         // 2. 1->2 == Insert vertices

@@ -22,14 +22,14 @@ pub fn rail_planner_plugin(app: &mut App) {
 }
 
 #[derive(Component)]
-#[require(Spline(|| Spline::default().with_max_segments(10)), SplineMesh)]
+#[require(Spline(|| Spline::default()), SplineMesh)]
 pub struct RailPlanner {
-    pub start_intersection_id: Option<u32>,
+    pub start_intersection_id: Option<Uuid>,
     /// Initial placement is used together with the presence of a start joint
     /// If we have no initial placement, we want the first placement to confirm
     /// the start_forward orientation
     pub is_initial_placement: bool,
-    pub end_intersection_id: Option<u32>,
+    pub end_intersection_id: Option<Uuid>,
     pub status: RailPlannerStatus,
 
     /// If start or end rail are defined we want to split them, since we are
@@ -164,8 +164,9 @@ fn update_intitial_rail_planner(
             if let Ok((e, target_rail, target_spline)) = rails.get(hits[0].0) {
                 plan.start_rail = Some(e);
 
-                let spline_pos = target_spline.get_nearest_point(&cursor.build_pos);
-                let forward = target_spline.forward_from_pos(&spline_pos);
+                let t = target_spline.t_from_pos(&cursor.build_pos);
+                let spline_pos = target_spline.position(t);
+                let forward = target_spline.forward(t);
 
                 pos = spline_pos;
                 let mut forward = forward.as_vec3();
@@ -193,7 +194,6 @@ fn update_intitial_rail_planner(
                     .center;
                 let min_distance = pos.distance(start.into()).min(pos.distance(end.into()));
 
-                // TODO: Notify user of this validation failure
                 if min_distance < RAIL_MIN_LENGTH {
                     plan.status = RailPlannerStatus::ExtendTooCloseToIntersection(min_distance);
                     feedback.entries.push(
@@ -308,8 +308,9 @@ fn update_rail_planner(
                     if let Ok((entity, target_rail, target_spline)) = rails.get(hits[0].0) {
                         plan.end_rail = Some(entity);
 
-                        let pos = target_spline.get_nearest_point(&cursor.build_pos);
-                        let forward = target_spline.forward_from_pos(&pos);
+                        let t = target_spline.t_from_pos(&cursor.build_pos);
+                        let pos = target_spline.position(t);
+                        let forward = target_spline.forward(t);
                         controls[1].pos = pos;
 
                         let mut forward = forward.as_vec3();
@@ -394,7 +395,7 @@ fn update_rail_planner(
                 {
                     RailPlannerStatus::TrainOnEndRail
                 } else {
-                    let points: Vec<Vec3> = spline.create_curve_points();
+                    let points = spline.curve_points();
                     let first_segment = points[1] - points[0];
                     let max_angle = points
                         .iter()
@@ -500,15 +501,12 @@ fn update_rail_planner_feedback(
                     RAIL_MAX_RADIANS.to_degrees()
                 )
                 .into(),
-                RailPlannerStatus::CurveTooShallow(x) => {
-                    // "Rail angle too close to neighbors".into()
-                    format!(
-                        "Curve Too Shallow {:.2} < {:.2}",
-                        x.to_degrees(),
-                        RAIL_MIN_DELTA_RADIANS.to_degrees()
-                    )
-                    .into()
-                }
+                RailPlannerStatus::CurveTooShallow(x) => format!(
+                    "Curve Too Shallow {:.2} < {:.2}",
+                    x.to_degrees(),
+                    RAIL_MIN_DELTA_RADIANS.to_degrees()
+                )
+                .into(),
                 RailPlannerStatus::RailTooShort(x) => {
                     format!("Rail Too Short {:.2} < {:.2}", x, RAIL_MIN_LENGTH).into()
                 }
@@ -559,7 +557,7 @@ fn draw_rail_planner(mut gizmos: Gizmos, q: Query<(&RailPlanner, &Spline)>) {
         } else {
             Color::srgb(1.0, 0.1, 0.1)
         };
-        gizmos.linestrip(spline.create_curve_points(), color);
+        gizmos.linestrip(spline.curve_points().clone(), color);
         // info!(
         //     "points {:?}\n
         //     pos {:?}",
