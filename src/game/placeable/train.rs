@@ -13,7 +13,7 @@ pub(super) fn train_plugin(app: &mut App) {
             handle_train_placement.run_if(
                 in_player_state(PlayerState::Building).and(is_placeable_preview(Placeable::Train)),
             ),
-            traverse,
+            move_trains,
         ),
     );
 }
@@ -123,17 +123,19 @@ fn load_train_asset(
     });
 }
 
-fn traverse(
+fn move_trains(
     mut q: Query<(&mut Transform, &mut Train)>,
     rails: Query<(&Rail, &Spline)>,
     time: Res<Time>,
     intersections: Res<RailIntersections>,
     mut rng: GlobalEntropy<WyRand>,
+    // mut gizmos: Gizmos,
 ) {
     q.iter_mut().for_each(|(mut t, mut train)| {
         let (rail, spline) = rails.get(train.rail).unwrap();
+        let distance = 10.0 * time.delta_secs();
         let result = train.traverse(
-            10.0 * time.delta_secs(),
+            distance,
             train.t,
             t.forward(),
             train.rail,
@@ -143,6 +145,13 @@ fn traverse(
             &intersections,
             &mut rng,
         );
+
+        // let delta = result.pos - t.translation;
+        // for i in 0..200 {
+        //     let i = i as f32;
+        //     let pos = t.translation + delta * i;
+        //     gizmos.sphere(Isometry3d::from_translation(pos.clone()), 0.3, GREEN_500);
+        // }
 
         train.rail = result.rail;
         train.t = result.t;
@@ -179,13 +188,6 @@ fn handle_train_placement(
     let mut forward = preview.0.forward();
     let mut target_rail = None;
     let mut target_spline = None;
-
-    // Test if we can resolve arbitrary pos for rail
-    // for spline in rails.iter() {
-    //     let t = spline.t_from_pos(&pos);
-    //     let pos = spline.position(t);
-    //     gizmos.line(cursor.build_pos + Vec3::Y, pos + Vec3::Y, RED_500);
-    // }
 
     if hits.len() > 0 {
         if let Ok(spline) = rails.get(hits[0].0) {

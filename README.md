@@ -20,7 +20,7 @@ Rail editor
 - [ ] Add vertical rail building
   - [x] Add proper raycasting
 - [ ] Add copy pasta? 
-- [ ] Return positions uniformly spaced
+- [x] Return positions uniformly spaced
 
 Train
 - [x] Support placing and creating different things on rails
@@ -59,7 +59,17 @@ For some different options you can check [run.bat](run.bat) which I use when dev
   * Now anytime you want you can run `run.bat web`
 
 ### Attaching debugger
-I use VSCode for development. If you want to attach a debugger you can F5. Make sure `stable-x86_64-pc-windows-msvc` is installed (run `rustup toolchain list`) or check [launch.json](.vscode/launch.json) to update according to your needs
+I use VSCode and MSVC for development. If you want to attach a debugger you can F5.
+1. Install [CodeLLDB](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb) extension
+2. Hit f5
+
+Truth be told, the debugger crashes a lot for me. It seems to [be a known issue](https://github.com/vadimcn/codelldb/wiki/Windows) with MSVC due to debug info being in PDB and DWARF seems more stable which is provided by GNU. I could try GNU, but I didn't bother and instead if I need to do some serious debugging I use [Rust Rover](https://www.jetbrains.com/rust/)
+
+If you also use this, you have to do some manual setup since unfortunately I've not been able to set the environmental variables generically:
+1. Open "Edit Configurations"
+2. In command add `--features=bevy/dynamic_linking` 
+3. In environmental variables add `PATH=C:\Users\Angelo\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin\\;C:\Dev\project-odyssey\target\debug\deps`
+   1. Note that you should replace the 2 paths with your own values. If you know of a way to use `%USERPROFILE%` it could be made generic and this config can then be stored, so no need to manually do anything but for now that doesn't seem possible.
 
 ### Multiplayer
 > I'll drop multiplayer for now, while I still keep it in mind let's not try and learn about bevy by making a fully deterministic simulation :#
@@ -97,5 +107,6 @@ Migration
 ### Some rust/bevy pain points
 * Debugger experience is subpar. A vec of dyn objects gives pretty much no info (pointer to pointer to pointer, nothning concrete) As does a Res type. It might be due to opt-levels but I can't put it lower cuz I run into linker limitations, why is the limit a 16bit integer anyway?
   * For example, our input vec of type Buttonlike gives us `vec->buf->inner->ptr->pointer->pointer->*pointer = 0`... I'd expect some more concrete data but maybe the external lib just does some crazy stuff that I have to dive a bit deeper into
+  * Debugger also keeps crashing, but this seems to be a known issue with PDB format and DWARF is preferred.
 * Unable to easily browse symbols of dependencies, I gotta write the type and jump to it, I'd like to just ctrl+t and search for anything
   * Upon further investigation this is a setting that can be configured `"rust-analyzer.workspace.symbol.search.scope": "workspace_and_dependencies"`. Unfortunately it is very slow and even worse, I can no longer find my own symbols

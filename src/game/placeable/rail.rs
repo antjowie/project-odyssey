@@ -31,7 +31,7 @@ pub(super) fn rail_plugin(app: &mut App) {
 
 const RAIL_MIN_LENGTH: f32 = 10.;
 const RAIL_MIN_DELTA_RADIANS: f32 = 15.0 * PI / 180.;
-const RAIL_MAX_RADIANS: f32 = 22.5 * PI / 180.;
+const RAIL_MAX_RADIANS: f32 = 10. * PI / 180.;
 const RAIL_CURVES_MAX: usize = (PI / RAIL_MIN_DELTA_RADIANS) as usize;
 
 #[derive(Resource)]
@@ -42,7 +42,7 @@ pub struct RailAsset {
 
 /// Contains the details to build and connect a rail
 #[derive(Component)]
-#[require(Spline, SplineMesh, Placeable(||Placeable::Rail), Name(|| Name::new("Rail")))]
+#[require(Spline(|| Spline::default().with_min_segment_length(2.0)), SplineMesh, Placeable(||Placeable::Rail), Name(|| Name::new("Rail")))]
 pub struct Rail {
     pub joints: [RailJoint; 2],
 }
@@ -224,49 +224,47 @@ impl Rail {
         &self,
         t: f32,
         forward: &Dir3,
-        distance: f32,
+        remaining_distance: f32,
         spline: &Spline,
     ) -> TraverseResult {
         let right = spline.forward(t);
-        let current_t = t;
-        let delta_t = distance / spline.curve_length();
-
         let is_traveling_right = right.dot(forward.as_vec3()) > 0.0;
-        if is_traveling_right {
-            let new_t = current_t + delta_t;
-            if new_t >= 1.0 {
-                TraverseResult::Intersection {
-                    t: 1.0,
-                    pos: spline.controls()[1].pos,
-                    forward: Dir3::new(-spline.controls()[1].forward).unwrap(),
-                    remaining_distance: (distance - (delta_t * spline.curve_length())).max(0.0),
-                    intersection_id: self.joints[1].intersection_id,
-                }
+        let new_t = spline.traverse(
+            t,
+            if is_traveling_right {
+                remaining_distance
             } else {
-                let pos = spline.position(new_t);
-                TraverseResult::End {
-                    t: new_t,
-                    pos,
-                    forward: spline.forward(new_t),
-                }
+                -remaining_distance
+            },
+        );
+
+        if new_t >= 1.0 {
+            TraverseResult::Intersection {
+                t: 1.0,
+                pos: spline.controls()[1].pos,
+                forward: Dir3::new(-spline.controls()[1].forward).unwrap(),
+                // Move it by a little bit, otherwise during our next iter
+                // we will be considered on an intersection again
+                remaining_distance: remaining_distance * 0.5,
+                intersection_id: self.joints[1].intersection_id,
+            }
+        } else if new_t <= 0.0 {
+            TraverseResult::Intersection {
+                t: 0.0,
+                pos: spline.controls()[0].pos,
+                forward: Dir3::new(-spline.controls()[0].forward).unwrap(),
+                remaining_distance: remaining_distance * 0.5,
+                intersection_id: self.joints[0].intersection_id,
             }
         } else {
-            let new_t = current_t - delta_t;
-            if new_t <= 0.0 {
-                TraverseResult::Intersection {
-                    t: 0.0,
-                    pos: spline.controls()[0].pos,
-                    forward: Dir3::new(-spline.controls()[0].forward).unwrap(),
-                    remaining_distance: (distance - (delta_t * spline.curve_length())).max(0.0),
-                    intersection_id: self.joints[0].intersection_id,
-                }
-            } else {
-                let pos = spline.position(new_t);
-                TraverseResult::End {
-                    t: new_t,
-                    pos,
-                    forward: -spline.forward(new_t),
-                }
+            TraverseResult::End {
+                t: new_t,
+                pos: spline.position(new_t),
+                forward: if is_traveling_right {
+                    spline.forward(new_t)
+                } else {
+                    -spline.forward(new_t)
+                },
             }
         }
     }
@@ -568,7 +566,7 @@ fn debug_rail_intersections(
 
     // Print hovered intersection info
     if let Some(collision) = collision {
-        egui::Window::new(format!("intersection {}", collision.0)).show(contexts.ctx_mut(), |ui| {
+        egui::Window::new("intersection").show(contexts.ctx_mut(), |ui| {
             ui.label(format!("{:#?}", collision.1));
         });
 

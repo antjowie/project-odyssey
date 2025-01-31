@@ -1,6 +1,5 @@
 use core::f32;
 
-use avian3d::position;
 use bevy::{
     asset::RenderAssetUsages,
     color::palettes::tailwind::{BLUE_500, GREEN_500, RED_500},
@@ -14,7 +13,7 @@ impl Plugin for SplinePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Update, update_spline_mesh);
         app.register_type::<SplineMesh>();
-        app.add_systems(Update, debug_spline);
+        // app.add_systems(Update, _debug_spline);
     }
 }
 
@@ -51,7 +50,7 @@ impl Default for Spline {
         Self {
             controls: Default::default(),
             controls_override: None,
-            min_segment_length: 10.0,
+            min_segment_length: 1.0,
             curve: CubicBezier::new([[Vec3::ZERO, Vec3::ZERO, Vec3::ZERO, Vec3::ZERO]])
                 .to_curve()
                 .unwrap(),
@@ -63,6 +62,11 @@ impl Default for Spline {
 }
 
 impl Spline {
+    pub fn with_min_segment_length(mut self, length: f32) -> Self {
+        self.min_segment_length = length;
+        self
+    }
+
     pub fn controls(&self) -> &[SplineControl; 2] {
         &self.controls
     }
@@ -141,6 +145,45 @@ impl Spline {
         }
     }
 
+    /// Returns a new t based on an amount of movement along the curve
+    /// You should use this for any linear movement over the curve such as a train
+    pub fn traverse(&self, t: f32, movement: f32) -> f32 {
+        let mut idx = 0;
+        for (i, x) in self.lut.iter().enumerate() {
+            idx = i;
+            if x.t > t {
+                break;
+            }
+        }
+
+        // Out of bounds, so return the bound
+        if idx == 0 {
+            return 0.0;
+        }
+        let l = self.lut[idx - 1];
+        let r = self.lut[idx];
+
+        // We calc a ratio of distance (this tells us how much % we moved along the segment)
+        // We then take that ratio and add it to the current t
+        // This makes a linear assumption between t and distance, which is not valid
+        // but for our small intervals is good enough, more importantly, we won't run
+        // into issues where we're off by very small float values, and our train ends
+        // up moving backwards
+        let dist_range = r.distance_along_curve - l.distance_along_curve;
+        let dist_ratio = movement / dist_range;
+
+        let t_range = r.t - l.t;
+        t + t_range * dist_ratio
+    }
+
+    /// Since these are all approximations, you can run into float issues once
+    /// these get to close. For example:
+    /// distance(t) = 10.0
+    /// t_from_distance(t + 1.0e-5) = 9.99999
+    /// You would expect it to go further right, but we're approximating so it's not always valid
+    /// Because of this, it is NOT safe to try and write code that relies on such assumptions
+    ///
+    /// If you have such a need (such as moving a train along a track) use the traverse method
     pub fn t_from_distance(&self, distance: f32) -> f32 {
         let mut idx = 0;
         for (i, x) in self.lut.iter().enumerate() {
@@ -167,13 +210,13 @@ impl Spline {
         let distance_to_t = pos.distance(l.pos);
         let mut distance_delta_squared = distance - distance_to_t;
         distance_delta_squared = distance_delta_squared * distance_delta_squared;
-        let distance_threshold = 1.0e-2 as f32;
+        let distance_threshold = 1.0e-2 / self.curve_points.len() as f32;
         // let mut iter = 0;
         // Depending on our LUT samples, we might already be close enough and have no need
         // to further interpolate
         for _ in 0..100 {
             // iter += 1;
-            if distance_delta_squared.abs() < distance_threshold {
+            if distance_delta_squared < distance_threshold {
                 break;
             }
 
@@ -229,7 +272,7 @@ impl Spline {
             self.lut[min_idx + 1].t
         };
         let mut interval = (t - lt).max(rt - t);
-        let interval_threshold = 1.0e-2 / self.curve_points.len() as f32;
+        let interval_threshold = 1.0e-4 / self.curve_points.len() as f32;
         // let mut iter = 0;
         for _ in 0..100 {
             // iter += 1;
@@ -276,6 +319,29 @@ impl Spline {
 
     pub fn forward(&self, t: f32) -> Dir3 {
         Dir3::new(self.curve.velocity(t).normalize()).unwrap()
+    }
+
+    pub fn distance_along_curve(&self, t: f32) -> f32 {
+        let mut idx = 0;
+        for (i, x) in self.lut.iter().enumerate() {
+            idx = i;
+            if x.t > t {
+                break;
+            }
+        }
+
+        // Out of bounds, so return the bound
+        if idx == 0 {
+            return self.lut[idx].distance_along_curve;
+        }
+        let l = self.lut[idx - 1];
+        let r = self.lut[idx];
+
+        let range = r.t - l.t;
+        let ratio = (t - l.t) / range;
+
+        // Interpolate to a better t -> distance relation
+        l.distance_along_curve.lerp(r.distance_along_curve, ratio)
     }
 
     /// Create left and right spline with pos as center
@@ -369,14 +435,20 @@ impl Default for SplineMesh {
     }
 }
 
-fn debug_spline(q: Query<&Spline>, mut gizmos: Gizmos) {
+fn _debug_spline(q: Query<&Spline>, mut gizmos: Gizmos) {
     q.iter().for_each(|spline| {
         let lut: Vec<Vec3> = spline.lut.iter().map(|x| x.pos).collect();
-        gizmos.linestrip(lut.clone(), GREEN_500);
         for pos in lut {
             gizmos.sphere(Isometry3d::from_translation(pos.clone()), 0.2, BLUE_500);
         }
-        gizmos.linestrip(spline.curve_points().clone(), RED_500);
+        for i in 0..=spline.curve_length().ceil() as u32 {
+            let distance = i as f32;
+            let t = spline.t_from_distance(distance);
+            let pos = spline.position(t);
+            gizmos.sphere(Isometry3d::from_translation(pos.clone()), 0.3, GREEN_500);
+            let pos = spline.position(spline.t_from_distance(spline.distance_along_curve(t)));
+            gizmos.sphere(Isometry3d::from_translation(pos.clone()), 0.4, RED_500);
+        }
     });
 }
 

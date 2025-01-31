@@ -359,7 +359,6 @@ fn update_rail_planner(
 
             // Validate our plan, if it's still valid all former checks have passed
             if plan.status == RailPlannerStatus::Valid {
-                let length = delta.length();
                 let start_min_angle = if let Some(id) = plan.start_intersection_id {
                     intersections
                         .intersections
@@ -373,8 +372,10 @@ fn update_rail_planner(
                 } else {
                     90.
                 };
-                plan.status = if length < RAIL_MIN_LENGTH && plan.end_intersection_id.is_none() {
-                    RailPlannerStatus::RailTooShort(delta.length())
+                plan.status = if spline.curve_length() < RAIL_MIN_LENGTH
+                    && plan.end_intersection_id.is_none()
+                {
+                    RailPlannerStatus::RailTooShort(spline.curve_length())
                 } else if start_min_angle < RAIL_MIN_DELTA_RADIANS {
                     RailPlannerStatus::CurveTooShallow(start_min_angle)
                 } else if plan.start_rail.is_some()
