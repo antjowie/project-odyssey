@@ -345,7 +345,7 @@ impl Spline {
     }
 
     /// Create left and right spline with pos as center
-    pub fn split(&self, pos: &Vec3, gizmos: &mut Option<&mut Gizmos>) -> (Spline, Spline) {
+    pub fn split(&self, pos: &Vec3, gizmos: Option<&mut Gizmos>) -> (Spline, Spline) {
         let t = self.t_from_pos(&pos);
         let pos = self.curve.sample(t).unwrap();
         let control_points = self.create_curve_control_points();
@@ -383,11 +383,11 @@ impl Spline {
         start_spline.set_controls([
             SplineControl {
                 pos: start[0],
-                forward: (start[1] - start[0]).normalize(),
+                forward: Dir3::new(start[1] - start[0]).unwrap(),
             },
             SplineControl {
                 pos: start[3],
-                forward: (start[2] - start[3]).normalize(),
+                forward: Dir3::new(start[2] - start[3]).unwrap(),
             },
         ]);
 
@@ -396,11 +396,11 @@ impl Spline {
         end_spline.set_controls([
             SplineControl {
                 pos: end[0],
-                forward: (end[1] - end[0]).normalize(),
+                forward: Dir3::new(end[1] - end[0]).unwrap(),
             },
             SplineControl {
                 pos: end[3],
-                forward: (end[2] - end[3]).normalize(),
+                forward: Dir3::new(end[2] - end[3]).unwrap(),
             },
         ]);
 
@@ -409,13 +409,22 @@ impl Spline {
 }
 
 /// Represents the start and end of a spline, also knows as knots
-#[derive(Default, Clone, Copy, Reflect, PartialEq)]
+#[derive(Clone, Copy, Reflect, PartialEq)]
 pub struct SplineControl {
     pub pos: Vec3,
     /// Points in the direction of the curve
     /// EX: for a horizontal curve the left control would point to the right
     /// and the right would point to the left
-    pub forward: Vec3,
+    pub forward: Dir3,
+}
+
+impl Default for SplineControl {
+    fn default() -> Self {
+        Self {
+            pos: Default::default(),
+            forward: Dir3::new_unchecked(Vec3::NEG_Z),
+        }
+    }
 }
 
 /// Samples a spline and generates a mesh from it
@@ -481,7 +490,7 @@ fn update_spline_mesh(
         // 2. 1->2 == Insert vertices
         // 3. 2->None == No insertion
         // To generate the mesh, we want to also insert an element at the end which is just an extension
-        points.push(spline.controls()[1].pos - spline.controls()[1].forward);
+        points.push(spline.controls()[1].pos - spline.controls()[1].forward.as_vec3());
 
         let mut vertices = Vec::new();
         let mut normal = Vec::new();

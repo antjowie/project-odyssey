@@ -21,6 +21,8 @@ pub(super) fn rail_plugin(app: &mut App) {
         rail_graph::rail_graph_plugin,
         rail_planner::rail_planner_plugin,
     ));
+    app.add_event::<RailIntersectionChangedEvent>();
+    app.add_event::<RailIntersectionRemovedEvent>();
     app.add_systems(Startup, load_rail_asset);
     app.add_systems(
         Update,
@@ -34,7 +36,11 @@ const RAIL_MIN_DELTA_RADIANS: f32 = 15.0 * PI / 180.;
 const RAIL_MAX_RADIANS: f32 = 10. * PI / 180.;
 const RAIL_CURVES_MAX: usize = (PI / RAIL_MIN_DELTA_RADIANS) as usize;
 
-#[derive(Resource)]
+#[derive(Event)]
+pub struct RailIntersectionChangedEvent(RailIntersection);
+#[derive(Event)]
+pub struct RailIntersectionRemovedEvent(RailIntersection);
+#[derive(Event, Resource)]
 pub struct RailAsset {
     pub material: Handle<StandardMaterial>,
     pub hover_material: Handle<StandardMaterial>,
@@ -172,7 +178,7 @@ impl Rail {
         mut c: &mut Commands,
         mut intersections: &mut ResMut<RailIntersections>,
         rail_asset: &RailAsset,
-        gizmos: &mut Option<&mut Gizmos>,
+        gizmos: Option<&mut Gizmos>,
     ) {
         // Create a joint at the intersection point
         let default_plan = RailPlanner {
@@ -242,7 +248,7 @@ impl Rail {
             TraverseResult::Intersection {
                 t: 1.0,
                 pos: spline.controls()[1].pos,
-                forward: Dir3::new(-spline.controls()[1].forward).unwrap(),
+                forward: -spline.controls()[1].forward,
                 // Move it by a little bit, otherwise during our next iter
                 // we will be considered on an intersection again
                 remaining_distance: remaining_distance * 0.5,
@@ -252,7 +258,7 @@ impl Rail {
             TraverseResult::Intersection {
                 t: 0.0,
                 pos: spline.controls()[0].pos,
-                forward: Dir3::new(-spline.controls()[0].forward).unwrap(),
+                forward: -spline.controls()[0].forward,
                 remaining_distance: remaining_distance * 0.5,
                 intersection_id: self.joints[0].intersection_id,
             }
@@ -342,21 +348,13 @@ impl RailIntersections {
             .find(|x| x.1.collision.intersects(sphere))
     }
 
-    pub fn create_new_intersection(&mut self, pos: Vec3, right_forward: Vec3) -> Uuid {
-        const SIZE: f32 = 2.5;
+    pub fn create_new_intersection(&mut self, pos: Vec3, right_forward: Dir3) -> Uuid {
         let mut uuid = Uuid::new_v4();
         while self.used_uuids.contains(&uuid) {
             uuid = Uuid::new_v4();
         }
-        self.intersections.insert(
-            uuid,
-            RailIntersection {
-                right_forward,
-                left: [None; RAIL_CURVES_MAX],
-                right: [None; RAIL_CURVES_MAX],
-                collision: BoundingSphere::new(pos, SIZE),
-            },
-        );
+        self.intersections
+            .insert(uuid, RailIntersection::new(uuid, pos, right_forward));
         self.used_uuids.insert(uuid);
 
         uuid
@@ -366,18 +364,31 @@ impl RailIntersections {
 /// Can be considered as a node in a graph
 /// A junction is supported by inserting an intersection
 /// Traffic control is controlled by inserting an intersection, to split traffic groups
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct RailIntersection {
+    pub uuid: Uuid,
     pub left: [Option<Entity>; RAIL_CURVES_MAX],
     pub right: [Option<Entity>; RAIL_CURVES_MAX],
     /// The "right" forward decided whether the rail will be put in the left or right group.
     /// When traversing the rails we know if we can go left or right by aligning our
     /// incoming dir with the right_forward dir
-    pub right_forward: Vec3,
+    pub right_forward: Dir3,
     pub collision: BoundingSphere,
 }
 
 impl RailIntersection {
+    pub fn new(uuid: Uuid, pos: Vec3, right_forward: Dir3) -> Self {
+        const SIZE: f32 = 2.5;
+
+        RailIntersection {
+            uuid,
+            right_forward,
+            left: [None; RAIL_CURVES_MAX],
+            right: [None; RAIL_CURVES_MAX],
+            collision: BoundingSphere::new(pos, SIZE),
+        }
+    }
+
     pub fn get_empty_idx(intersections: &[Option<Entity>; RAIL_CURVES_MAX]) -> Option<usize> {
         intersections
             .iter()
@@ -416,11 +427,11 @@ impl RailIntersection {
     pub fn is_right_side(&self, pos: Vec3) -> bool {
         (pos - Into::<Vec3>::into(self.collision.center()))
             .normalize()
-            .dot(self.right_forward)
+            .dot(self.right_forward.as_vec3())
             > 0.
     }
 
-    pub fn get_nearest_forward(&self, pos: Vec3) -> Vec3 {
+    pub fn get_nearest_forward(&self, pos: Vec3) -> Dir3 {
         if self.is_right_side(pos) {
             self.right_forward
         } else {
@@ -429,7 +440,7 @@ impl RailIntersection {
     }
 
     pub fn get_curve_options(&self, forward: &Dir3) -> Vec<Entity> {
-        if forward.dot(self.right_forward) > 0.0 {
+        if forward.dot(self.right_forward.as_vec3()) > 0.0 {
             self.right.iter().filter_map(|x| *x).collect()
         } else {
             self.left.iter().filter_map(|x| *x).collect()
@@ -487,12 +498,12 @@ fn debug_rail_path(
         // Draw forwards
         gizmos.line(
             spline.controls()[0].pos,
-            spline.controls()[0].pos + spline.controls()[0].forward,
+            spline.controls()[0].pos + spline.controls()[0].forward.as_vec3(),
             Color::srgb(1.0, 0.1, 0.1),
         );
         gizmos.line(
             spline.controls()[0].pos,
-            spline.controls()[0].pos + spline.controls()[0].forward,
+            spline.controls()[0].pos + spline.controls()[0].forward.as_vec3(),
             Color::srgb(0.1, 0.1, 1.0),
         );
 

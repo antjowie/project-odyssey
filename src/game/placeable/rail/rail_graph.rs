@@ -11,33 +11,14 @@ pub use petgraph::graph::node_index as NodeIndex;
 use petgraph::{prelude::*, visit::Visitable};
 use uuid::Uuid;
 
-use super::RailIntersections;
+use super::{RailIntersection, RailIntersections};
 
 pub fn rail_graph_plugin(app: &mut App) {
     {
-        app.add_event::<RailIntersectionAddedEvent>();
-        app.add_event::<RailIntersectionRemovedEvent>();
-        app.add_event::<RailAddedEvent>();
-        app.add_event::<RailRemovedEvent>();
         app.insert_resource(RailGraph::default());
-        app.add_systems(
-            Update,
-            (
-                debug_rail_graph,
-                generate_rail_graph.run_if(resource_changed::<RailIntersections>),
-            ),
-        );
+        app.add_systems(Update, (debug_rail_graph,));
     }
 }
-
-#[derive(Event)]
-pub struct RailIntersectionAddedEvent;
-#[derive(Event)]
-pub struct RailIntersectionRemovedEvent;
-#[derive(Event)]
-pub struct RailAddedEvent;
-#[derive(Event)]
-pub struct RailRemovedEvent;
 
 #[derive(Resource, Default)]
 pub struct RailGraph(StableDiGraph<RailNode, RailEdge>);
@@ -82,7 +63,7 @@ pub struct RailEdge {
     pub length: f32,
 }
 
-fn generate_rail_graph() {}
+fn update_rail_graph(mut graph: ResMut<RailGraph>) {}
 
 fn debug_rail_graph(
     mut gizmos: Gizmos,

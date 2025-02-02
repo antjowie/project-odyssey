@@ -43,11 +43,11 @@ impl RailPlanner {
         spline.set_controls([
             SplineControl {
                 pos: start_pos,
-                forward: start_pos.normalize_or(Vec3::X),
+                forward: Dir3::new_unchecked(Vec3::NEG_Z),
             },
             SplineControl {
                 pos: start_pos,
-                forward: start_pos.normalize_or(Vec3::X),
+                forward: Dir3::new_unchecked(Vec3::NEG_Z),
             },
         ]);
 
@@ -166,10 +166,9 @@ fn update_intitial_rail_planner(
 
                 let t = target_spline.t_from_pos(&cursor.build_pos);
                 let spline_pos = target_spline.position(t);
-                let forward = target_spline.forward(t);
+                let mut forward = target_spline.forward(t);
 
                 pos = spline_pos;
-                let mut forward = forward.as_vec3();
 
                 // Check if we are trying to expand rail
                 if input.just_pressed(&PlayerBuildAction::Rotate) {
@@ -247,13 +246,13 @@ fn update_rail_planner(
         controls[1].pos = cursor.build_pos;
 
         let delta = controls[1].pos - controls[0].pos;
-        let towards = delta.normalize();
+        let to_end = Dir3::new(delta).unwrap_or(Dir3::new_unchecked(Vec3::NEG_Z));
         plan.status = RailPlannerStatus::Valid;
 
         // This is our initial placement, we don't have an orientation yet
         if plan.is_initial_placement() {
-            controls[0].forward = towards;
-            controls[1].forward = -towards;
+            controls[0].forward = to_end;
+            controls[1].forward = -to_end;
             plan.end_intersection_id = None;
             plan.end_rail = None;
 
@@ -268,16 +267,16 @@ fn update_rail_planner(
             match cursor.curve_mode {
                 PathCurveMode::Curve => {
                     let incidence = controls[0].forward;
-                    let towards_2d = Vec2::from_angle(FRAC_PI_2).rotate(towards.xz());
+                    let towards_2d = Vec2::from_angle(FRAC_PI_2).rotate(to_end.xz());
                     let normal = vec3(towards_2d.x, 0., towards_2d.y);
                     gizmos.line(controls[0].pos, controls[0].pos + normal, Color::BLACK);
-                    controls[1].forward = -incidence.reflect(normal);
+                    controls[1].forward = Dir3::new_unchecked(-incidence.reflect(normal));
                 }
                 PathCurveMode::Straight => {
                     controls[1].forward = -controls[0].forward;
                 }
                 PathCurveMode::Chase => {
-                    controls[1].forward = -towards;
+                    controls[1].forward = -to_end;
                 }
             }
             controls[1].forward =
@@ -288,16 +287,14 @@ fn update_rail_planner(
             plan.end_intersection_id = None;
             let sphere = BoundingSphere::new(cursor.world_pos, 0.1);
             let intersection = intersections.get_intersect_collision(&sphere);
-            if intersection.is_some()
-                && plan
-                    .start_intersection_id
-                    .is_none_or(|x| intersection.unwrap().0 != &x)
-            {
+            if intersection.is_some() {
                 let x = intersection.unwrap();
-                controls[1].pos = x.1.collision.center.into();
-                controls[1].forward = x.1.get_nearest_forward(cursor.world_pos);
-                plan.end_intersection_id = Some(*x.0);
-                *align_to_right = (false, false);
+                if plan.start_intersection_id.is_none_or(|y| y != *x.0) {
+                    controls[1].pos = x.1.collision.center.into();
+                    controls[1].forward = x.1.get_nearest_forward(cursor.world_pos);
+                    plan.end_intersection_id = Some(*x.0);
+                    *align_to_right = (false, false);
+                }
             } else {
                 // Check if we hover over another rail, if so we insert intersection
                 let hits = ray_cast.cast_ray(
@@ -310,13 +307,11 @@ fn update_rail_planner(
 
                         let t = target_spline.t_from_pos(&cursor.build_pos);
                         let pos = target_spline.position(t);
-                        let forward = target_spline.forward(t);
+                        let mut forward = target_spline.forward(t);
                         controls[1].pos = pos;
 
-                        let mut forward = forward.as_vec3();
-
                         if align_to_right.0 == false {
-                            if forward.dot(controls[1].forward) > 0.0 {
+                            if forward.dot(controls[1].forward.as_vec3()) > 0.0 {
                                 align_to_right.1 = true;
                             }
                         }
@@ -330,7 +325,7 @@ fn update_rail_planner(
                             forward = -forward;
                         }
 
-                        target_spline.split(&pos, &mut Some(&mut gizmos));
+                        target_spline.split(&pos, Some(&mut gizmos));
                         controls[1].forward = forward;
 
                         let start = intersections
@@ -443,7 +438,7 @@ fn update_rail_planner(
                         &mut c,
                         &mut intersections,
                         &asset,
-                        &mut None,
+                        None,
                     );
                 }
 
@@ -457,7 +452,7 @@ fn update_rail_planner(
                         &mut c,
                         &mut intersections,
                         &asset,
-                        &mut None,
+                        None,
                     );
                 }
 
@@ -573,12 +568,12 @@ fn draw_rail_planner(mut gizmos: Gizmos, q: Query<(&RailPlanner, &Spline)>) {
         );
         gizmos.line(
             spline.controls()[0].pos,
-            spline.controls()[0].pos + spline.controls()[0].forward,
+            spline.controls()[0].pos + spline.controls()[0].forward.as_vec3(),
             Color::srgb(0.7, 0.0, 0.0),
         );
         gizmos.line(
             spline.controls()[1].pos,
-            spline.controls()[1].pos + spline.controls()[1].forward,
+            spline.controls()[1].pos + spline.controls()[1].forward.as_vec3(),
             Color::srgb(0.0, 0.0, 0.7),
         );
     });
