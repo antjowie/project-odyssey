@@ -48,7 +48,7 @@ impl Train {
                 intersection_id,
             } => {
                 let intersection = intersections.intersections.get(&intersection_id).unwrap();
-                let options = intersection.get_curve_options(&forward);
+                let options = intersection.curve_options(&forward);
                 if options.is_empty() {
                     // For now we'll just flip the train
                     self.traverse(

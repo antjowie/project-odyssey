@@ -139,12 +139,12 @@ fn update_intitial_rail_planner(
                 0,
                 SplineControl {
                     pos,
-                    forward: x.1.get_nearest_forward(cursor.world_pos),
+                    forward: x.1.nearest_forward(cursor.world_pos),
                 },
             );
 
             let start: Vec3 = x.1.collision.center.into();
-            let end = start + x.1.get_nearest_forward(cursor.world_pos) * 10.;
+            let end = start + x.1.nearest_forward(cursor.world_pos) * 10.;
 
             gizmos
                 .arrow(start, end, Color::srgb(1., 1., 0.))
@@ -238,6 +238,10 @@ fn update_rail_planner(
     mut ray_cast: MeshRayCast,
     // prev_hover, should_align
     mut align_to_right: Local<(bool, bool)>,
+    mut graph: ResMut<RailGraph>,
+    mut ev_changed: EventWriter<RailIntersectionChangedEvent>,
+    mut ev_rail_removed: EventWriter<RailRemovedEvent>,
+    mut ev_intersection_removed: EventWriter<RailIntersectionRemovedEvent>,
 ) {
     let (mut cursor, input) = player_states.single_mut();
 
@@ -291,7 +295,7 @@ fn update_rail_planner(
                 let x = intersection.unwrap();
                 if plan.start_intersection_id.is_none_or(|y| y != *x.0) {
                     controls[1].pos = x.1.collision.center.into();
-                    controls[1].forward = x.1.get_nearest_forward(cursor.world_pos);
+                    controls[1].forward = x.1.nearest_forward(cursor.world_pos);
                     plan.end_intersection_id = Some(*x.0);
                     *align_to_right = (false, false);
                 }
@@ -420,17 +424,29 @@ fn update_rail_planner(
             {
                 // Create the rail
                 let mut ec = c.spawn_empty();
-                let rail = Rail::new(&mut ec, &mut intersections, &plan, &spline, &asset);
+                let rail = Rail::new(
+                    &mut ec,
+                    &mut intersections,
+                    &plan,
+                    &spline,
+                    &asset,
+                    &mut graph,
+                );
 
                 // Rail is inserted at the end because it moves rail, which is still used
+                let mut modified_intersection_ids = vec![];
                 let start_intersection_id = rail.joints[0].intersection_id;
                 let end_intersection_id = rail.joints[1].intersection_id;
+                modified_intersection_ids.extend([
+                    rail.joints[0].intersection_id,
+                    rail.joints[1].intersection_id,
+                ]);
                 ec.insert((rail, spline.clone()));
 
                 // If required, split other rails
                 if let Some(start) = plan.start_rail {
-                    let (e, mut r, mut spline) = rails.get_mut(start).unwrap();
-                    r.insert_intersection(
+                    let (e, mut rail, mut spline) = rails.get_mut(start).unwrap();
+                    rail.insert_intersection(
                         start_intersection_id,
                         e,
                         &controls[0].pos,
@@ -438,13 +454,17 @@ fn update_rail_planner(
                         &mut c,
                         &mut intersections,
                         &asset,
+                        &mut graph,
+                        &mut modified_intersection_ids,
+                        &mut ev_rail_removed,
+                        &mut ev_intersection_removed,
                         None,
                     );
                 }
 
                 if let Some(end) = plan.end_rail {
-                    let (e, mut r, mut spline) = rails.get_mut(end).unwrap();
-                    r.insert_intersection(
+                    let (e, mut rail, mut spline) = rails.get_mut(end).unwrap();
+                    rail.insert_intersection(
                         end_intersection_id,
                         e,
                         &controls[1].pos,
@@ -452,10 +472,21 @@ fn update_rail_planner(
                         &mut c,
                         &mut intersections,
                         &asset,
+                        &mut graph,
+                        &mut modified_intersection_ids,
+                        &mut ev_rail_removed,
+                        &mut ev_intersection_removed,
                         None,
                     );
                 }
 
+                modified_intersection_ids.sort();
+                modified_intersection_ids.dedup();
+                ev_changed.send_batch(
+                    modified_intersection_ids
+                        .iter()
+                        .map(|x| RailIntersectionChangedEvent(*x)),
+                );
                 // Reset and update the plan
                 controls[0].pos = controls[1].pos;
                 controls[0].forward = -controls[1].forward;

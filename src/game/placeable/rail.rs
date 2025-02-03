@@ -10,19 +10,20 @@ use cursor_feedback::CursorFeedback;
 use uuid::Uuid;
 
 use crate::spline::*;
+use rail_graph::*;
 use rail_planner::*;
 
 pub mod rail_graph;
 pub mod rail_planner;
 
 pub(super) fn rail_plugin(app: &mut App) {
-    // app.add_systems(Update, (on_place_rail, debug_draw_rail_path));
     app.add_plugins((
         rail_graph::rail_graph_plugin,
         rail_planner::rail_planner_plugin,
     ));
     app.add_event::<RailIntersectionChangedEvent>();
     app.add_event::<RailIntersectionRemovedEvent>();
+    app.add_event::<RailRemovedEvent>();
     app.add_systems(Startup, load_rail_asset);
     app.add_systems(
         Update,
@@ -36,10 +37,15 @@ const RAIL_MIN_DELTA_RADIANS: f32 = 15.0 * PI / 180.;
 const RAIL_MAX_RADIANS: f32 = 10. * PI / 180.;
 const RAIL_CURVES_MAX: usize = (PI / RAIL_MIN_DELTA_RADIANS) as usize;
 
-#[derive(Event)]
-pub struct RailIntersectionChangedEvent(RailIntersection);
+#[derive(Event, PartialEq, PartialOrd, Eq, Ord)]
+pub struct RailIntersectionChangedEvent(Uuid);
+
 #[derive(Event)]
 pub struct RailIntersectionRemovedEvent(RailIntersection);
+
+#[derive(Event)]
+pub struct RailRemovedEvent(Rail);
+
 #[derive(Event, Resource)]
 pub struct RailAsset {
     pub material: Handle<StandardMaterial>,
@@ -47,10 +53,12 @@ pub struct RailAsset {
 }
 
 /// Contains the details to build and connect a rail
-#[derive(Component)]
+#[derive(Component, Clone, Copy)]
 #[require(Spline(|| Spline::default().with_min_segment_length(2.0)), SplineMesh, Placeable(||Placeable::Rail), Name(|| Name::new("Rail")))]
 pub struct Rail {
     pub joints: [RailJoint; 2],
+    pub nav_to_end: Option<RailGraphEdgeId>,
+    pub nav_to_start: Option<RailGraphEdgeId>,
 }
 
 impl Rail {
@@ -60,16 +68,17 @@ impl Rail {
         plan: &RailPlanner,
         spline: &Spline,
         rail_asset: &RailAsset,
+        mut graph: &mut RailGraph,
     ) -> Rail {
         let start = spline.controls()[0].pos;
         let end = spline.controls()[1].pos;
 
         let start_intersection_id = plan.start_intersection_id.unwrap_or_else(|| {
-            intersections.create_new_intersection(start, spline.controls()[0].forward)
+            intersections.create_new_intersection(start, spline.controls()[0].forward, &mut graph)
         });
 
         let end_intersection_id = plan.end_intersection_id.unwrap_or_else(|| {
-            intersections.create_new_intersection(end, -spline.controls()[1].forward)
+            intersections.create_new_intersection(end, -spline.controls()[1].forward, &mut graph)
         });
 
         let self_state = Rail {
@@ -81,6 +90,8 @@ impl Rail {
                     intersection_id: end_intersection_id,
                 },
             ],
+            nav_to_end: None,
+            nav_to_start: None,
         };
 
         let connect_intersection =
@@ -91,7 +102,7 @@ impl Rail {
                     &mut intersection.left
                 };
 
-                side[RailIntersection::get_empty_idx(side).unwrap()] = Some(entity);
+                side[RailIntersection::empty_idx(side).unwrap()] = Some(entity);
             };
 
         let mut start_intersection = intersections
@@ -128,11 +139,36 @@ impl Rail {
         self_state
     }
 
+    pub fn far_intersection<'a>(
+        &self,
+        pos: &Vec3,
+        intersections: &'a RailIntersections,
+    ) -> &'a RailIntersection {
+        let start = intersections
+            .intersections
+            .get(&self.joints[0].intersection_id)
+            .unwrap();
+        let end = intersections
+            .intersections
+            .get(&self.joints[1].intersection_id)
+            .unwrap();
+
+        if pos.distance_squared(start.collision.center.into())
+            < pos.distance_squared(end.collision.center.into())
+        {
+            end
+        } else {
+            start
+        }
+    }
+
     pub fn destroy(
         &mut self,
         self_entity: Entity,
         c: &mut Commands,
         intersections: &mut ResMut<RailIntersections>,
+        ev_rail_removed: &mut EventWriter<RailRemovedEvent>,
+        ev_intersection_removed: &mut EventWriter<RailIntersectionRemovedEvent>,
     ) {
         let mut process = |intersection_id| {
             let intersection = intersections
@@ -156,6 +192,7 @@ impl Rail {
                 .find(|e| e.is_some())
                 .is_none()
             {
+                ev_intersection_removed.send(RailIntersectionRemovedEvent(intersection.clone()));
                 intersections.intersections.remove(&intersection_id);
             } else {
                 intersection.left.sort_by(|a, b| b.cmp(a));
@@ -165,6 +202,8 @@ impl Rail {
 
         process(self.joints[0].intersection_id);
         process(self.joints[1].intersection_id);
+
+        ev_rail_removed.send(RailRemovedEvent(self.clone()));
         c.entity(self_entity).despawn();
     }
 
@@ -178,6 +217,10 @@ impl Rail {
         mut c: &mut Commands,
         mut intersections: &mut ResMut<RailIntersections>,
         rail_asset: &RailAsset,
+        mut graph: &mut RailGraph,
+        modified_intersection_ids: &mut Vec<Uuid>,
+        mut ev_rail_removed: &mut EventWriter<RailRemovedEvent>,
+        mut ev_intersection_removed: &mut EventWriter<RailIntersectionRemovedEvent>,
         gizmos: Option<&mut Gizmos>,
     ) {
         // Create a joint at the intersection point
@@ -204,6 +247,7 @@ impl Rail {
             &start_plan,
             &start_spline,
             &rail_asset,
+            &mut graph,
         );
         start_entity.insert((start_rail, start_spline));
 
@@ -220,10 +264,23 @@ impl Rail {
             &end_plan,
             &end_spline,
             &rail_asset,
+            &mut graph,
         );
         end_entity.insert((end_rail, end_spline));
 
-        self.destroy(self_entity, &mut c, &mut intersections);
+        modified_intersection_ids.extend([
+            self.joints[0].intersection_id,
+            middle_intersection_id,
+            self.joints[1].intersection_id,
+        ]);
+
+        self.destroy(
+            self_entity,
+            &mut c,
+            &mut intersections,
+            &mut ev_rail_removed,
+            &mut ev_intersection_removed,
+        );
     }
 
     pub fn traverse(
@@ -288,7 +345,9 @@ pub enum TraverseResult {
         intersection_id: Uuid,
     },
 }
+
 /// Represents the data for the rail end points
+#[derive(Clone, Copy)]
 pub struct RailJoint {
     pub intersection_id: Uuid,
 }
@@ -348,13 +407,25 @@ impl RailIntersections {
             .find(|x| x.1.collision.intersects(sphere))
     }
 
-    pub fn create_new_intersection(&mut self, pos: Vec3, right_forward: Dir3) -> Uuid {
+    pub fn create_new_intersection(
+        &mut self,
+        pos: Vec3,
+        right_forward: Dir3,
+        graph: &mut RailGraph,
+    ) -> Uuid {
         let mut uuid = Uuid::new_v4();
         while self.used_uuids.contains(&uuid) {
             uuid = Uuid::new_v4();
         }
-        self.intersections
-            .insert(uuid, RailIntersection::new(uuid, pos, right_forward));
+
+        let nav_id = graph.0.add_node(RailNode {
+            intersection_id: uuid,
+        });
+
+        self.intersections.insert(
+            uuid,
+            RailIntersection::new(uuid, pos, right_forward, nav_id),
+        );
         self.used_uuids.insert(uuid);
 
         uuid
@@ -374,10 +445,11 @@ pub struct RailIntersection {
     /// incoming dir with the right_forward dir
     pub right_forward: Dir3,
     pub collision: BoundingSphere,
+    pub nav_id: RailGraphNodeId,
 }
 
 impl RailIntersection {
-    pub fn new(uuid: Uuid, pos: Vec3, right_forward: Dir3) -> Self {
+    pub fn new(uuid: Uuid, pos: Vec3, right_forward: Dir3, nav_id: RailGraphNodeId) -> Self {
         const SIZE: f32 = 2.5;
 
         RailIntersection {
@@ -386,10 +458,11 @@ impl RailIntersection {
             left: [None; RAIL_CURVES_MAX],
             right: [None; RAIL_CURVES_MAX],
             collision: BoundingSphere::new(pos, SIZE),
+            nav_id,
         }
     }
 
-    pub fn get_empty_idx(intersections: &[Option<Entity>; RAIL_CURVES_MAX]) -> Option<usize> {
+    pub fn empty_idx(intersections: &[Option<Entity>; RAIL_CURVES_MAX]) -> Option<usize> {
         intersections
             .iter()
             .enumerate()
@@ -431,7 +504,7 @@ impl RailIntersection {
             > 0.
     }
 
-    pub fn get_nearest_forward(&self, pos: Vec3) -> Dir3 {
+    pub fn nearest_forward(&self, pos: Vec3) -> Dir3 {
         if self.is_right_side(pos) {
             self.right_forward
         } else {
@@ -439,7 +512,15 @@ impl RailIntersection {
         }
     }
 
-    pub fn get_curve_options(&self, forward: &Dir3) -> Vec<Entity> {
+    pub fn curves(&self) -> Vec<Entity> {
+        self.left
+            .iter()
+            .chain(self.right.iter())
+            .filter_map(|x| *x)
+            .collect()
+    }
+
+    pub fn curve_options(&self, forward: &Dir3) -> Vec<Entity> {
         if forward.dot(self.right_forward.as_vec3()) > 0.0 {
             self.right.iter().filter_map(|x| *x).collect()
         } else {
@@ -455,6 +536,8 @@ fn on_rail_destroy(
     mut c: Commands,
     mut intersections: ResMut<RailIntersections>,
     mut feedback: ResMut<CursorFeedback>,
+    mut ev_rail_removed: EventWriter<RailRemovedEvent>,
+    mut ev_intersection_removed: EventWriter<RailIntersectionRemovedEvent>,
 ) {
     // Check if there are no trains on this rail
     let entity = trigger.entity();
@@ -469,9 +552,13 @@ fn on_rail_destroy(
         }
     }
 
-    q.get_mut(entity)
-        .unwrap()
-        .destroy(trigger.entity(), &mut c, &mut intersections);
+    q.get_mut(entity).unwrap().destroy(
+        trigger.entity(),
+        &mut c,
+        &mut intersections,
+        &mut ev_rail_removed,
+        &mut ev_intersection_removed,
+    );
 }
 
 fn load_rail_asset(mut c: Commands, mut materials: ResMut<Assets<StandardMaterial>>) {

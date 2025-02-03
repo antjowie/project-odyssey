@@ -232,7 +232,10 @@ fn update_cursor(
             global_transform,
             cursor.screen_pos.unwrap_or(window.size() * 0.5),
         )
-        .unwrap();
+        .unwrap_or(Ray3d::new(
+            global_transform.translation(),
+            global_transform.forward(),
+        ));
 
     if let Some(ray) = cursor
         .screen_pos
