@@ -17,11 +17,13 @@ use crate::util::*;
 use cursor_feedback::*;
 use placeable::*;
 use player::*;
+use selectable::*;
 use world::*;
 
 pub mod cursor_feedback;
 pub mod placeable;
 pub mod player;
+pub mod selectable;
 pub mod world;
 
 /// All game systems and rules
@@ -33,6 +35,7 @@ impl Plugin for GamePlugin {
         app.add_plugins(cursor_feedback_plugin);
         app.add_plugins(placeable_plugin);
         app.add_plugins(player_plugin);
+        app.add_plugins(selectable_plugin);
         app.add_plugins(world_plugin);
 
         app.add_systems(

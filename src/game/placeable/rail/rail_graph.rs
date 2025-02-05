@@ -40,7 +40,11 @@ impl RailGraph {
         to: NodeIndex,
         intersections: Res<RailIntersections>,
     ) -> Vec<u32> {
-        // astar()
+        let reached_goal = |node| node == to;
+        let edge_cost = |edge| 1;
+        let node_cost = |_| 0;
+        astar(&self.0, from, reached_goal, edge_cost, node_cost);
+
         // dijkstra(graph, start, goal, edge_cost)
         // let mut predecessor = vec![NodeIndex::end(); gr.node_count()];
         // depth_first_search(&gr, Some(start), |event| {

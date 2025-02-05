@@ -104,6 +104,9 @@ Migration
 * [ECS Guide](https://github.com/bevyengine/bevy/blob/v0.14.0/examples/ecs/ecs_guide.rs)
 * [Bevy Examples](https://bevyengine.org/examples/)
 
+### Lessons for future
+* When it comes to input handling, use the command pattern. For example, left click is Enter Build Mode, but when hovering over an interactable it should be Interact. This should also auto populate and the current system doesn't support that. 
+
 ### Some rust/bevy pain points
 * Debugger experience is subpar. A vec of dyn objects gives pretty much no info (pointer to pointer to pointer, nothning concrete) As does a Res type. It might be due to opt-levels but I can't put it lower cuz I run into linker limitations, why is the limit a 16bit integer anyway?
   * For example, our input vec of type Buttonlike gives us `vec->buf->inner->ptr->pointer->pointer->*pointer = 0`... I'd expect some more concrete data but maybe the external lib just does some crazy stuff that I have to dive a bit deeper into

@@ -19,7 +19,7 @@ pub(super) fn train_plugin(app: &mut App) {
 }
 
 #[derive(Component)]
-#[require(Placeable(||Placeable::Train), Name(|| Name::new("Train")))]
+#[require(Placeable(||Placeable::Train), Name(|| Name::new("Train")), Selectable)]
 pub struct Train {
     /// The alpha on the current rail the train is traversing
     pub t: f32,

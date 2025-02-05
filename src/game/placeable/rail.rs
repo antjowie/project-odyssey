@@ -127,12 +127,12 @@ impl Rail {
         );
 
         self_entity
-            .observe(update_material_on::<Pointer<Over>>(
-                rail_asset.hover_material.clone(),
-            ))
-            .observe(update_material_on::<Pointer<Out>>(
-                rail_asset.material.clone(),
-            ))
+            // .observe(update_material_on::<Pointer<Over>>(
+            //     rail_asset.hover_material.clone(),
+            // ))
+            // .observe(update_material_on::<Pointer<Out>>(
+            //     rail_asset.material.clone(),
+            // ))
             .observe(on_rail_destroy)
             .insert(MeshMaterial3d(rail_asset.material.clone()));
 

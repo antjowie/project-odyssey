@@ -26,7 +26,7 @@ pub enum PlayerViewAction {
     PickRail,
     PickTrain,
     PickDestroy,
-    EnterBuildMode,
+    Interact,
     ExitGame,
 }
 
@@ -36,7 +36,7 @@ impl InputContextlike for PlayerViewAction {
             .with(PlayerViewAction::PickRail, KeyCode::Digit1)
             .with(PlayerViewAction::PickTrain, KeyCode::Digit2)
             .with(PlayerViewAction::PickDestroy, KeyCode::KeyX)
-            .with(PlayerViewAction::EnterBuildMode, MouseButton::Left)
+            .with(PlayerViewAction::Interact, MouseButton::Left)
             .with(PlayerViewAction::ExitGame, KeyCode::Escape)
     }
 
@@ -312,10 +312,6 @@ fn handle_view_state_input(
 
             if input.just_pressed(&PlayerViewAction::PickDestroy) {
                 *placeable = Placeable::Destroyer;
-                state.set(PlayerState::Building, &mut c, e, &mut ev_state);
-            }
-
-            if input.just_pressed(&PlayerViewAction::EnterBuildMode) {
                 state.set(PlayerState::Building, &mut c, e, &mut ev_state);
             }
 
