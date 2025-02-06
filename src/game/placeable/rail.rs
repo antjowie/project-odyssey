@@ -44,7 +44,7 @@ pub struct RailIntersectionChangedEvent(Uuid);
 pub struct RailIntersectionRemovedEvent(RailIntersection);
 
 #[derive(Event)]
-pub struct RailRemovedEvent(Rail);
+pub struct RailRemovedEvent(Entity);
 
 #[derive(Event, Resource)]
 pub struct RailAsset {
@@ -53,12 +53,10 @@ pub struct RailAsset {
 }
 
 /// Contains the details to build and connect a rail
-#[derive(Component, Clone, Copy)]
+#[derive(Component)]
 #[require(Spline(|| Spline::default().with_min_segment_length(2.0)), SplineMesh, Placeable(||Placeable::Rail), Name(|| Name::new("Rail")))]
 pub struct Rail {
     pub joints: [RailJoint; 2],
-    pub nav_to_end: Option<RailGraphEdgeId>,
-    pub nav_to_start: Option<RailGraphEdgeId>,
 }
 
 impl Rail {
@@ -90,8 +88,6 @@ impl Rail {
                     intersection_id: end_intersection_id,
                 },
             ],
-            nav_to_end: None,
-            nav_to_start: None,
         };
 
         let connect_intersection =
@@ -203,7 +199,7 @@ impl Rail {
         process(self.joints[0].intersection_id);
         process(self.joints[1].intersection_id);
 
-        ev_rail_removed.send(RailRemovedEvent(self.clone()));
+        ev_rail_removed.send(RailRemovedEvent(self_entity));
         c.entity(self_entity).despawn();
     }
 
@@ -355,7 +351,6 @@ pub struct RailJoint {
 #[derive(Resource, Default)]
 pub struct RailIntersections {
     pub intersections: HashMap<Uuid, RailIntersection>,
-    pub used_uuids: HashSet<Uuid>,
 }
 
 impl RailIntersections {
@@ -413,20 +408,11 @@ impl RailIntersections {
         right_forward: Dir3,
         graph: &mut RailGraph,
     ) -> Uuid {
-        let mut uuid = Uuid::new_v4();
-        while self.used_uuids.contains(&uuid) {
-            uuid = Uuid::new_v4();
-        }
+        let uuid = Uuid::new_v4();
+        let intersection = RailIntersection::new(uuid, pos, right_forward);
 
-        let nav_id = graph.0.add_node(RailNode {
-            intersection_id: uuid,
-        });
-
-        self.intersections.insert(
-            uuid,
-            RailIntersection::new(uuid, pos, right_forward, nav_id),
-        );
-        self.used_uuids.insert(uuid);
+        // graph.add_intersection(&intersection);
+        self.intersections.insert(uuid, intersection);
 
         uuid
     }
@@ -435,7 +421,7 @@ impl RailIntersections {
 /// Can be considered as a node in a graph
 /// A junction is supported by inserting an intersection
 /// Traffic control is controlled by inserting an intersection, to split traffic groups
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct RailIntersection {
     pub uuid: Uuid,
     pub left: [Option<Entity>; RAIL_CURVES_MAX],
@@ -445,11 +431,10 @@ pub struct RailIntersection {
     /// incoming dir with the right_forward dir
     pub right_forward: Dir3,
     pub collision: BoundingSphere,
-    pub nav_id: RailGraphNodeId,
 }
 
 impl RailIntersection {
-    pub fn new(uuid: Uuid, pos: Vec3, right_forward: Dir3, nav_id: RailGraphNodeId) -> Self {
+    pub fn new(uuid: Uuid, pos: Vec3, right_forward: Dir3) -> Self {
         const SIZE: f32 = 2.5;
 
         RailIntersection {
@@ -458,7 +443,6 @@ impl RailIntersection {
             left: [None; RAIL_CURVES_MAX],
             right: [None; RAIL_CURVES_MAX],
             collision: BoundingSphere::new(pos, SIZE),
-            nav_id,
         }
     }
 

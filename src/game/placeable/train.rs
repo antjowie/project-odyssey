@@ -1,4 +1,4 @@
-use super::*;
+use super::{rail::rail_graph::RailGraph, *};
 use crate::spline::Spline;
 use avian3d::prelude::*;
 use bevy_rand::{global::GlobalEntropy, prelude::*};
@@ -14,6 +14,7 @@ pub(super) fn train_plugin(app: &mut App) {
                 in_player_state(PlayerState::Building).and(is_placeable_preview(Placeable::Train)),
             ),
             move_trains,
+            calculate_path,
         ),
     );
 }
@@ -252,5 +253,68 @@ fn handle_train_placement(
             train.collider.clone(),
         ))
         .observe(on_destroy_default);
+    }
+}
+
+fn calculate_path(
+    q: Query<(&Transform, &Train), With<Selected>>,
+    rails: Query<(&Rail, &Spline), Without<PlaceablePreview>>,
+    graph: Res<RailGraph>,
+    cursor: Single<&PlayerCursor>,
+    mut ray_cast: MeshRayCast,
+    intersections: Res<RailIntersections>,
+    mut gizmos: Gizmos,
+) {
+    if q.is_empty() {
+        return;
+    }
+
+    let end = ray_cast.cast_ray(cursor.ray, &RayCastSettings::default().always_early_exit());
+    if end.is_empty() || rails.contains(end[0].0) == false {
+        return;
+    }
+
+    for (t, train) in q.iter() {
+        let (start, spline) = rails.get(train.rail).unwrap();
+        let start = match start.traverse(train.t, &t.forward(), spline.curve_length(), &spline) {
+            TraverseResult::Intersection {
+                t: _,
+                pos: _,
+                forward,
+                remaining_distance: _,
+                intersection_id,
+            } => (intersection_id, forward),
+            _ => {
+                continue;
+            }
+        };
+
+        let path = graph.get_path(
+            intersections.intersections.get(&start.0).unwrap(),
+            &start.1,
+            end[0].0,
+            &end[0].1.point,
+        );
+
+        if let Some(path) = path {
+            let mut points = vec![t.translation];
+            points.append(
+                &mut path
+                    .iter()
+                    .map(|x| {
+                        intersections
+                            .intersections
+                            .get(x)
+                            .unwrap()
+                            .collision
+                            .center
+                            .into()
+                    })
+                    .collect::<Vec<Vec3>>(),
+            );
+            points.push(end[0].1.point);
+
+            gizmos.linestrip(points, Color::WHITE);
+        }
     }
 }

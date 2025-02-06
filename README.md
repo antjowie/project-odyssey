@@ -21,6 +21,7 @@ Rail editor
   - [x] Add proper raycasting
 - [ ] Add copy pasta? 
 - [x] Return positions uniformly spaced
+- [ ] Validate against overlapping rails where curve intersects < 45 degrees
 
 Train
 - [x] Support placing and creating different things on rails
@@ -36,7 +37,7 @@ Input
 - [x] Write context based input components to screen
 
 Pathfinding
-- [ ] Generate nav graph for rail
+- [x] Generate nav graph for rail
 - [ ] Support setting destinations
   - Need to somehow know which node depending on which segment we hovered
 - [ ] Add traffic control via signals
