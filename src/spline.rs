@@ -432,13 +432,23 @@ impl Default for SplineControl {
 #[require(Spline, Mesh3d)]
 pub struct SplineMesh {
     pub width: f32,
+    pub height: f32,
     pub source_spline_data: Spline,
+}
+
+impl SplineMesh {
+    pub fn with_height(mut self, height: f32) -> Self {
+        self.height = height;
+        self
+    }
 }
 
 impl Default for SplineMesh {
     fn default() -> Self {
         Self {
             width: 2.,
+            height: 0.5,
+
             source_spline_data: default(),
         }
     }
@@ -496,6 +506,8 @@ fn update_spline_mesh(
         let mut normal = Vec::new();
         vertices.reserve(points.len() * 2);
         normal.reserve(points.len() * 2);
+        let width = spline_mesh.width * 0.5;
+        let height = spline_mesh.height;
 
         points
             .iter()
@@ -504,40 +516,79 @@ fn update_spline_mesh(
                 let forward = (next - sample).normalize();
                 let side = forward.cross(Vec3::Y);
 
-                // Generate left and right vertices
-                // TODO: Remove the vertical offset once we have a mesh with height, otherwise we will have z-fighting
-                let right = sample - side * spline_mesh.width + Vec3::Y * 0.01;
-                let left = sample + side * spline_mesh.width + Vec3::Y * 0.01;
-                vertices.push(right);
+                let left = sample - side * width;
+                let right = sample + side * width;
+
+                // Up down left right
+                vertices.push(left + Vec3::Y * height);
+                vertices.push(right + Vec3::Y * height);
                 vertices.push(left);
+                vertices.push(right);
+                vertices.push(left + Vec3::Y * height);
+                vertices.push(left);
+                vertices.push(right + Vec3::Y * height);
+                vertices.push(right);
                 let up = side.cross(forward);
                 normal.push(up);
                 normal.push(up);
+                normal.push(-up);
+                normal.push(-up);
+                normal.push(-side);
+                normal.push(-side);
+                normal.push(side);
+                normal.push(side);
 
                 gizmos.arrow(*sample, sample + forward, Color::srgb(1., 0., 0.));
-                gizmos.line(*sample, right, Color::srgb(0., 1., 0.));
-                gizmos.line(*sample, left, Color::srgb(1., 0., 0.));
+                gizmos.line(*sample, left, Color::srgb(0., 1., 0.));
+                gizmos.line(*sample, right, Color::srgb(1., 0., 0.));
                 gizmos.line(*sample, sample + up, Color::srgb(0., 0., 1.));
             });
 
-        let quads = vertices.len() / 2 - 1;
-
+        let segments = vertices.len() / 8 - 1;
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normal);
 
         let mut indices = Vec::<u32>::new();
-        indices.reserve(quads * 6);
+        indices.reserve(segments * 24);
 
-        for i in 0..quads {
-            let offset = (i * 2) as u32;
+        for i in 0..segments {
+            let offset = (i * 8) as u32;
             indices.append(
                 &mut [
+                    // Up
                     offset + 0,
                     offset + 1,
-                    offset + 2,
+                    offset + 8,
                     offset + 1,
-                    offset + 3,
+                    offset + 9,
+                    offset + 8,
+                    // Down
                     offset + 2,
+                    offset + 10,
+                    offset + 3,
+                    offset + 3,
+                    offset + 10,
+                    offset + 11,
+                    // Left
+                    offset + 5,
+                    offset + 4,
+                    offset + 12,
+                    offset + 5,
+                    offset + 12,
+                    offset + 13,
+                    // Right
+                    offset + 7,
+                    offset + 14,
+                    offset + 6,
+                    offset + 7,
+                    offset + 15,
+                    offset + 14,
+                    // offset + 0,
+                    // offset + 1,
+                    // offset + 2,
+                    // offset + 1,
+                    // offset + 3,
+                    // offset + 2,
                 ]
                 .to_vec(),
             );

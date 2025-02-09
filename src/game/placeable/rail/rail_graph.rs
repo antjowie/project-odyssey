@@ -65,8 +65,6 @@ pub struct RailGraph {
 }
 
 impl RailGraph {
-    /// TODO: We should probs do this via events, and to do that we should define
-    ///     ordered systems as currently it is assumed that any node always has a nav_id
     fn add_intersection(&mut self, intersection: &RailIntersection) -> RailGraphNodeBinding {
         let pos: Vec3 = intersection.collision.center.into();
         let binding = RailGraphNodeBinding {

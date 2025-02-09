@@ -54,7 +54,11 @@ pub struct RailAsset {
 
 /// Contains the details to build and connect a rail
 #[derive(Component)]
-#[require(Spline(|| Spline::default().with_min_segment_length(2.0)), SplineMesh, Placeable(||Placeable::Rail), Name(|| Name::new("Rail")))]
+#[require(
+    Spline(|| Spline::default().with_min_segment_length(2.0)), 
+    SplineMesh(|| SplineMesh::default().with_height(0.1)), 
+    Placeable(||Placeable::Rail), 
+    Name(|| Name::new("Rail")))]
 pub struct Rail {
     pub joints: [RailJoint; 2],
 }
@@ -70,7 +74,7 @@ impl Rail {
     ) -> Rail {
         let start = spline.controls()[0].pos;
         let end = spline.controls()[1].pos;
-
+        
         let start_intersection_id = plan.start_intersection_id.unwrap_or_else(|| {
             intersections.create_new_intersection(start, spline.controls()[0].forward, &mut graph)
         });
@@ -549,6 +553,9 @@ fn load_rail_asset(mut c: Commands, mut materials: ResMut<Assets<StandardMateria
     c.insert_resource(RailAsset {
         material: materials.add(StandardMaterial {
             base_color: Color::srgb(0.3, 0.3, 0.3),
+            // Causes odd shadows issues
+            // double_sided: true,
+            cull_mode: None,
             ..default()
         }),
         hover_material: materials.add(StandardMaterial {

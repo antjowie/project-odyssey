@@ -422,6 +422,8 @@ fn update_rail_planner(
             if input.just_pressed(&PlayerBuildAction::Interact)
                 && plan.status == RailPlannerStatus::Valid
             {
+                spline.set_controls(controls);
+
                 // Create the rail
                 let mut ec = c.spawn_empty();
                 let rail = Rail::new(
@@ -441,7 +443,8 @@ fn update_rail_planner(
                     rail.joints[0].intersection_id,
                     rail.joints[1].intersection_id,
                 ]);
-                ec.insert((rail, spline.clone()));
+                // Move a little bit up to prevent z fighting
+                ec.insert((rail, spline.clone(), Transform::from_xyz(0.0, 0.01, 0.0)));
 
                 // If required, split other rails
                 if let Some(start) = plan.start_rail {

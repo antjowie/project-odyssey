@@ -110,7 +110,7 @@ impl PlayerState {
         &mut self,
         new_state: PlayerState,
         c: &mut Commands,
-        e: Entity,
+        state_entity: Entity,
         ev_player_state: &mut EventWriter<PlayerStateEvent>,
     ) {
         if new_state == *self {
@@ -122,7 +122,7 @@ impl PlayerState {
             new_state: new_state.clone(),
         });
 
-        let mut ec = c.entity(e);
+        let mut ec = c.entity(state_entity);
 
         match self {
             PlayerState::Viewing => ec.remove::<InputContext<PlayerViewAction>>(),
