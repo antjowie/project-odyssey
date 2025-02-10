@@ -180,23 +180,19 @@ fn handle_train_placement(
     let mut preview = preview.single_mut();
 
     let (mut cursor, input) = q.single_mut();
-    let hits = ray_cast.cast_ray(
-        cursor.ray,
-        &RayCastSettings::default().with_filter(&|e| rails.contains(e)),
-    );
-
     let mut pos = cursor.build_pos;
     let mut forward = preview.0.forward();
     let mut target_rail = None;
     let mut target_spline = None;
 
-    if hits.len() > 0 {
-        if let Ok(spline) = rails.get(hits[0].0) {
+    let hit = get_closest_rail(cursor.ray, &mut ray_cast, &rails);
+    if let Some(hit) = hit {
+        if let Ok(spline) = rails.get(hit.0) {
             let t = spline.t_from_pos(&pos);
-            pos = spline.position(t);
+            pos = spline.projected_position(t);
             forward = spline.forward(t);
             cursor.manual_rotation = 0.0;
-            gizmos.line(cursor.build_pos + Vec3::Y, pos + Vec3::Y, RED_500);
+            gizmos.line(pos, hit.1.point, RED_500);
             for point in spline.curve_points() {
                 gizmos.sphere(Isometry3d::from_translation(*point), 0.2, RED_500);
             }
@@ -213,7 +209,7 @@ fn handle_train_placement(
                 forward = Dir3::new(forward.as_vec3() * -1.0).unwrap();
             }
 
-            target_rail = Some(hits[0].0);
+            target_rail = Some(hit.0);
             target_spline = Some(spline);
             *previous_had_hit = true;
         }

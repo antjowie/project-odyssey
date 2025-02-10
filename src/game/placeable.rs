@@ -10,7 +10,7 @@ pub mod rail;
 pub mod train;
 
 pub(super) fn placeable_plugin(app: &mut App) {
-    app.add_systems(Startup, load_assets);
+    app.add_systems(Startup, load_placeable_assets);
     app.add_plugins(destroyer_plugin);
     app.add_plugins(rail_plugin);
     app.add_plugins(train_plugin);
@@ -57,7 +57,7 @@ pub struct PlaceablePreviewMaterial {
     preview: Handle<StandardMaterial>,
 }
 
-fn load_assets(mut c: Commands, mut materials: ResMut<Assets<StandardMaterial>>) {
+fn load_placeable_assets(mut c: Commands, mut materials: ResMut<Assets<StandardMaterial>>) {
     c.insert_resource(PlaceablePreviewMaterial {
         valid: materials.add(StandardMaterial {
             base_color: Color::srgba(0.2, 1.0, 0.2, 0.8),

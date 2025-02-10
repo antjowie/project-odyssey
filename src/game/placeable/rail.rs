@@ -1,7 +1,7 @@
 use super::*;
 use bevy::{
     math::bounding::{BoundingSphere, IntersectsVolume},
-    picking::focus::PickingInteraction,
+    picking::{focus::PickingInteraction, mesh_picking::ray_cast::RayMeshHit},
     utils::{hashbrown::HashSet, HashMap},
 };
 use bevy_egui::{egui, EguiContexts};
@@ -55,8 +55,8 @@ pub struct RailAsset {
 /// Contains the details to build and connect a rail
 #[derive(Component)]
 #[require(
-    Spline(|| Spline::default().with_min_segment_length(2.0)), 
-    SplineMesh(|| SplineMesh::default().with_height(0.1)), 
+    Spline(|| Spline::default().with_min_segment_length(RAIL_MIN_LENGTH).with_height(0.5)), 
+    SplineMesh(|| SplineMesh::default().with_width(4.0)), 
     Placeable(||Placeable::Rail), 
     Name(|| Name::new("Rail")))]
 pub struct Rail {
@@ -74,7 +74,7 @@ impl Rail {
     ) -> Rail {
         let start = spline.controls()[0].pos;
         let end = spline.controls()[1].pos;
-        
+
         let start_intersection_id = plan.start_intersection_id.unwrap_or_else(|| {
             intersections.create_new_intersection(start, spline.controls()[0].forward, &mut graph)
         });
@@ -304,7 +304,7 @@ impl Rail {
         if new_t >= 1.0 {
             TraverseResult::Intersection {
                 t: 1.0,
-                pos: spline.controls()[1].pos,
+                pos: spline.controls()[1].pos + Vec3::Y * spline.height,
                 forward: -spline.controls()[1].forward,
                 // Move it by a little bit, otherwise during our next iter
                 // we will be considered on an intersection again
@@ -314,7 +314,7 @@ impl Rail {
         } else if new_t <= 0.0 {
             TraverseResult::Intersection {
                 t: 0.0,
-                pos: spline.controls()[0].pos,
+                pos: spline.controls()[0].pos + Vec3::Y * spline.height,
                 forward: -spline.controls()[0].forward,
                 remaining_distance: remaining_distance * 0.5,
                 intersection_id: self.joints[0].intersection_id,
@@ -322,7 +322,7 @@ impl Rail {
         } else {
             TraverseResult::End {
                 t: new_t,
-                pos: spline.position(new_t),
+                pos: spline.projected_position(new_t),
                 forward: if is_traveling_right {
                     spline.forward(new_t)
                 } else {
@@ -515,6 +515,24 @@ impl RailIntersection {
             self.left.iter().filter_map(|x| *x).collect()
         }
     }
+}
+
+pub fn get_closest_rail(ray: Ray3d, ray_cast: &mut MeshRayCast, query: &Query<&Spline, With<Rail>>) -> Option<(Entity, RayMeshHit)>
+{
+    let hits = ray_cast.cast_ray(ray, &RayCastSettings::default().with_filter(&|x| query.contains(x)).never_early_exit()).to_owned();
+    if hits.is_empty() {
+        return None;
+    }
+    
+    let hit = hits.into_iter().min_by(|x, y| {
+        let a = query.get(x.0).unwrap();
+        let b = query.get(y.0).unwrap();
+        let a = a.projected_position(a.t_from_pos(&x.1.point)).distance_squared(x.1.point);
+        let b = b.projected_position(b.t_from_pos(&y.1.point)).distance_squared(y.1.point);
+        a.total_cmp(&b)
+    }).unwrap();
+    
+    Some(hit)
 }
 
 fn on_rail_destroy(

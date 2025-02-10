@@ -34,6 +34,7 @@ pub struct Spline {
     /// https://pomax.github.io/bezierinfo/#tracing
     lut: [SplineLUT; LUT_SAMPLES],
     curve_length: f32,
+    pub height: f32,
 }
 
 #[derive(Default, Reflect, Clone, Copy, PartialEq)]
@@ -57,6 +58,7 @@ impl Default for Spline {
             curve_points: vec![],
             lut: [SplineLUT::default(); LUT_SAMPLES],
             curve_length: 0.0,
+            height: 1.0,
         }
     }
 }
@@ -64,6 +66,11 @@ impl Default for Spline {
 impl Spline {
     pub fn with_min_segment_length(mut self, length: f32) -> Self {
         self.min_segment_length = length;
+        self
+    }
+
+    pub fn with_height(mut self, height: f32) -> Self {
+        self.height = height;
         self
     }
 
@@ -317,6 +324,11 @@ impl Spline {
         self.curve.position(t)
     }
 
+    /// Returns the position on top of the spline based on it's height
+    pub fn projected_position(&self, t: f32) -> Vec3 {
+        self.position(t) + Vec3::Y * self.height
+    }
+
     pub fn forward(&self, t: f32) -> Dir3 {
         Dir3::new(self.curve.velocity(t).normalize()).unwrap()
     }
@@ -432,13 +444,12 @@ impl Default for SplineControl {
 #[require(Spline, Mesh3d)]
 pub struct SplineMesh {
     pub width: f32,
-    pub height: f32,
     pub source_spline_data: Spline,
 }
 
 impl SplineMesh {
-    pub fn with_height(mut self, height: f32) -> Self {
-        self.height = height;
+    pub fn with_width(mut self, width: f32) -> Self {
+        self.width = width;
         self
     }
 }
@@ -447,8 +458,6 @@ impl Default for SplineMesh {
     fn default() -> Self {
         Self {
             width: 2.,
-            height: 0.5,
-
             source_spline_data: default(),
         }
     }
@@ -507,7 +516,7 @@ fn update_spline_mesh(
         vertices.reserve(points.len() * 2);
         normal.reserve(points.len() * 2);
         let width = spline_mesh.width * 0.5;
-        let height = spline_mesh.height;
+        let height = spline.height;
 
         points
             .iter()

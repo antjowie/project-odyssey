@@ -8,7 +8,7 @@
 //! threads and we want to optimize the graphs for algorithm
 use avian3d::math::FRAC_PI_2;
 use bevy::{color::palettes::tailwind::GRAY_500, prelude::*};
-use petgraph::{algo::astar, prelude::*, visit::NodeRef};
+use petgraph::{algo::astar, prelude::*};
 use uuid::Uuid;
 
 use super::*;
@@ -16,7 +16,10 @@ use super::*;
 pub fn rail_graph_plugin(app: &mut App) {
     {
         app.insert_resource(RailGraph::default());
-        app.add_systems(Update, debug_rail_graph);
+        app.add_systems(
+            Update,
+            debug_rail_graph.run_if(in_player_state(PlayerState::Building)),
+        );
         app.add_systems(
             // PostUpdate ensures that components for new rails are added
             PostUpdate,
