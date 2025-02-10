@@ -3,7 +3,6 @@ use super::*;
 use bevy::pbr::{CascadeShadowConfigBuilder, DirectionalLightShadowMap, NotShadowCaster};
 
 pub(super) fn world_plugin(app: &mut App) {
-    app.insert_resource(DirectionalLightShadowMap { size: 4096 });
     app.add_systems(Startup, spawn_test_world);
 }
 
@@ -33,14 +32,18 @@ fn spawn_test_world(
     ));
 
     // Sun
+    // c.insert_resource(DirectionalLightShadowMap { size: 4096 });
+    // c.insert_resource(DirectionalLightShadowMap { size: 8192 });
+    c.insert_resource(DirectionalLightShadowMap { size: 8192 + 4096 });
+
     let cascade_shadow_config = CascadeShadowConfigBuilder {
         // num_cascades: 4,
         // minimum_distance: 0.1,
         // maximum_distance: 1000.0,
         // overlap_proportion: 0.5,
-        minimum_distance: 1.0,
-        // first_cascade_far_bound: 2.0,
-        maximum_distance: PanOrbitCameraSettings::default().max_radius * 1.5,
+        minimum_distance: 2.5,
+        first_cascade_far_bound: PanOrbitCameraSettings::default().max_radius * 0.1,
+        maximum_distance: PanOrbitCameraSettings::default().max_radius * 1.2,
         ..default()
     }
     .build();
