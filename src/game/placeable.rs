@@ -19,10 +19,10 @@ pub(super) fn placeable_plugin(app: &mut App) {
     app.add_systems(
         Update,
         (
-            cleanup_build_preview_on_state_change.run_if(on_event::<PlayerStateEvent>),
+            pick_hovered_placeable,
+            cleanup_build_preview_on_state_change.run_if(on_event::<PlayerStateChangedEvent>),
             update_picked_placeable.run_if(in_player_state(PlayerState::Building)),
-            create_or_update_placeable_preview
-                .run_if(on_event::<PlaceablePreviewChangedEvent>.or(on_event::<PlayerStateEvent>)),
+            on_placeable_preview_changed_event.run_if(on_event::<PlaceablePreviewChangedEvent>),
             (
                 on_add_build_preview_component,
                 update_build_preview_material,
@@ -47,7 +47,8 @@ pub enum Placeable {
 
 #[derive(Event)]
 pub struct PlaceablePreviewChangedEvent {
-    new: Placeable,
+    pub new: Placeable,
+    pub hovered_entity: Option<Entity>,
 }
 
 #[derive(Resource, PartialEq)]
@@ -110,42 +111,49 @@ pub fn is_placeable_preview(
     }
 }
 
-fn create_or_update_placeable_preview(
+fn on_placeable_preview_changed_event(
     mut c: Commands,
     mut ev: EventReader<PlaceablePreviewChangedEvent>,
-    player_state: Single<(Entity, &Placeable), With<PlayerState>>,
+    player: Single<Entity, With<PlayerState>>,
     previews: Query<Entity, With<PlaceablePreview>>,
-    train: Res<TrainAsset>,
+    placeables: Query<
+        &Transform,
+        (
+            Without<PlayerState>,
+            With<Placeable>,
+            Without<PlaceablePreview>,
+        ),
+    >,
+    train_asset: Res<TrainAsset>,
 ) {
-    let e_player = player_state.0;
+    let e_player = player.into_inner();
 
-    let spawn = |placeable: &Placeable, c: &mut Commands| match placeable {
-        Placeable::Rail => {}
-        Placeable::Train => {
-            c.spawn((
-                PlaceablePreview::new(e_player),
-                Mesh3d(train.mesh.clone()),
-                MeshMaterial3d(train.material.clone()),
-            ));
-        }
-        Placeable::Destroyer => {}
-    };
+    previews.iter().for_each(|e| c.entity(e).try_despawn());
+    for e in ev.read() {
+        let t = e
+            .hovered_entity
+            .map(|x| placeables.get(x).unwrap().to_owned());
+        let placeable = &e.new;
 
-    if previews.is_empty() {
-        spawn(&player_state.1, &mut c);
-    } else {
-        previews.iter().for_each(|e| c.entity(e).try_despawn());
-
-        for e in ev.read() {
-            spawn(&e.new, &mut c);
-        }
+        match placeable {
+            Placeable::Rail => {}
+            Placeable::Train => {
+                c.spawn((
+                    PlaceablePreview::new(e_player),
+                    Mesh3d(train_asset.mesh.clone()),
+                    MeshMaterial3d(train_asset.material.clone()),
+                    t.unwrap_or_default(),
+                ));
+            }
+            Placeable::Destroyer => {}
+        };
     }
 }
 
 fn cleanup_build_preview_on_state_change(
     mut c: Commands,
     q: Query<Entity, With<PlaceablePreview>>,
-    mut event: EventReader<PlayerStateEvent>,
+    mut event: EventReader<PlayerStateChangedEvent>,
 ) {
     {
         for e in event.read() {
@@ -208,20 +216,57 @@ fn update_picked_placeable(
     mut ev: EventWriter<PlaceablePreviewChangedEvent>,
 ) {
     q.iter_mut().for_each(|(input, mut placeable)| {
-        let old_placeable = placeable.clone();
-        if input.just_pressed(&PlayerBuildAction::PickRail) {
-            *placeable = Placeable::Rail;
-        }
-        if input.just_pressed(&PlayerBuildAction::PickTrain) {
-            *placeable = Placeable::Train;
-        }
-        if input.just_pressed(&PlayerBuildAction::PickDestroy) {
-            *placeable = Placeable::Destroyer;
-        }
-        if *placeable.bypass_change_detection() != old_placeable {
-            ev.send(PlaceablePreviewChangedEvent {
+        let current_placeable = placeable.bypass_change_detection().to_owned();
+        let mut handle = |action, item| {
+            if input.just_pressed(&action) && current_placeable != item {
+                *placeable = item;
+                ev.send(PlaceablePreviewChangedEvent {
+                    new: placeable.clone(),
+                    hovered_entity: None,
+                });
+            }
+        };
+        handle(PlayerBuildAction::PickRail, Placeable::Rail);
+        handle(PlayerBuildAction::PickTrain, Placeable::Train);
+        handle(PlayerBuildAction::PickDestroy, Placeable::Destroyer);
+    });
+}
+
+fn pick_hovered_placeable(
+    mut c: Commands,
+    player: Single<(
+        Entity,
+        &mut Placeable,
+        &mut PlayerState,
+        &PlayerCursor,
+        Option<&ActionState<PlayerViewAction>>,
+        Option<&ActionState<PlayerBuildAction>>,
+    )>,
+    placeables: Query<&Placeable, (Without<PlayerState>, Without<PlaceablePreview>)>,
+    mut ray_cast: MeshRayCast,
+    mut ev_state: EventWriter<PlayerStateChangedEvent>,
+    mut ev_placeable: EventWriter<PlaceablePreviewChangedEvent>,
+) {
+    let (e, mut placeable, mut state, cursor, view, build) = player.into_inner();
+    let just_pressed = view.is_some_and(|x| x.just_pressed(&PlayerViewAction::PickHovered))
+        || build.is_some_and(|x| x.just_pressed(&PlayerBuildAction::PickHovered));
+
+    if just_pressed {
+        let hits = ray_cast.cast_ray(
+            cursor.ray,
+            &RayCastSettings::default()
+                .always_early_exit()
+                .with_filter(&|x| placeables.contains(x)),
+        );
+
+        if hits.len() > 0 {
+            let new_placeable = placeables.get(hits[0].0).unwrap().to_owned();
+            state.set(PlayerState::Building, &mut c, e, &mut ev_state);
+            *placeable = new_placeable;
+            ev_placeable.send(PlaceablePreviewChangedEvent {
                 new: placeable.clone(),
+                hovered_entity: Some(hits[0].0),
             });
         }
-    });
+    }
 }

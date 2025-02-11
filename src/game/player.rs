@@ -4,7 +4,7 @@ use super::*;
 pub(super) fn player_plugin(app: &mut App) {
     app.add_plugins(InputContextPlugin::<PlayerViewAction>::default());
     app.add_plugins(InputContextPlugin::<PlayerBuildAction>::default());
-    app.add_event::<PlayerStateEvent>();
+    app.add_event::<PlayerStateChangedEvent>();
     app.add_systems(
         PreUpdate,
         update_cursor.in_set(InputManagerSystem::ManualControl),
@@ -23,6 +23,7 @@ pub(super) fn player_plugin(app: &mut App) {
     Actionlike, PartialEq, Eq, Hash, Clone, Copy, Debug, Reflect, PartialOrd, Ord, DisplayDebug,
 )]
 pub enum PlayerViewAction {
+    PickHovered,
     PickRail,
     PickTrain,
     PickDestroy,
@@ -33,6 +34,7 @@ pub enum PlayerViewAction {
 impl InputContextlike for PlayerViewAction {
     fn default_input_map() -> InputMap<Self> {
         InputMap::default()
+            .with(PlayerViewAction::PickHovered, KeyCode::KeyQ)
             .with(PlayerViewAction::PickRail, KeyCode::Digit1)
             .with(PlayerViewAction::PickTrain, KeyCode::Digit2)
             .with(PlayerViewAction::PickDestroy, KeyCode::KeyX)
@@ -49,6 +51,7 @@ impl InputContextlike for PlayerViewAction {
     Actionlike, PartialEq, Eq, Hash, Clone, Copy, Debug, Reflect, PartialOrd, Ord, DisplayDebug,
 )]
 pub enum PlayerBuildAction {
+    PickHovered,
     PickRail,
     PickTrain,
     PickDestroy,
@@ -66,6 +69,7 @@ pub enum PlayerBuildAction {
 impl InputContextlike for PlayerBuildAction {
     fn default_input_map() -> InputMap<Self> {
         InputMap::default()
+            .with(PlayerBuildAction::PickHovered, KeyCode::KeyQ)
             .with(PlayerBuildAction::PickRail, KeyCode::Digit1)
             .with(PlayerBuildAction::PickTrain, KeyCode::Digit2)
             .with(PlayerBuildAction::PickDestroy, KeyCode::KeyX)
@@ -111,13 +115,13 @@ impl PlayerState {
         new_state: PlayerState,
         c: &mut Commands,
         state_entity: Entity,
-        ev_player_state: &mut EventWriter<PlayerStateEvent>,
+        ev_player_state: &mut EventWriter<PlayerStateChangedEvent>,
     ) {
         if new_state == *self {
             return;
         }
 
-        ev_player_state.send(PlayerStateEvent {
+        ev_player_state.send(PlayerStateChangedEvent {
             old_state: self.clone(),
             new_state: new_state.clone(),
         });
@@ -149,7 +153,7 @@ fn setup_player_state(mut c: Commands, q: Query<Entity, Added<PlayerState>>) {
 }
 
 #[derive(Event, Debug)]
-pub struct PlayerStateEvent {
+pub struct PlayerStateChangedEvent {
     pub new_state: PlayerState,
     pub old_state: PlayerState,
 }
@@ -295,25 +299,25 @@ fn handle_view_state_input(
         &mut Placeable,
     )>,
     mut c: Commands,
-    mut ev_state: EventWriter<PlayerStateEvent>,
+    mut ev_state: EventWriter<PlayerStateChangedEvent>,
     mut ev_exit: EventWriter<AppExit>,
+    mut ev_preview: EventWriter<PlaceablePreviewChangedEvent>,
 ) {
     q.iter_mut()
         .for_each(|(e, mut state, input, mut placeable)| {
-            if input.just_pressed(&PlayerViewAction::PickRail) {
-                *placeable = Placeable::Rail;
-                state.set(PlayerState::Building, &mut c, e, &mut ev_state);
-            }
-
-            if input.just_pressed(&PlayerViewAction::PickTrain) {
-                *placeable = Placeable::Train;
-                state.set(PlayerState::Building, &mut c, e, &mut ev_state);
-            }
-
-            if input.just_pressed(&PlayerViewAction::PickDestroy) {
-                *placeable = Placeable::Destroyer;
-                state.set(PlayerState::Building, &mut c, e, &mut ev_state);
-            }
+            let mut handle = |action, item| {
+                if input.just_pressed(&action) {
+                    *placeable = item;
+                    ev_preview.send(PlaceablePreviewChangedEvent {
+                        new: placeable.clone(),
+                        hovered_entity: None,
+                    });
+                    state.set(PlayerState::Building, &mut c, e, &mut ev_state);
+                }
+            };
+            handle(PlayerViewAction::PickRail, Placeable::Rail);
+            handle(PlayerViewAction::PickTrain, Placeable::Train);
+            handle(PlayerViewAction::PickDestroy, Placeable::Destroyer);
 
             if input.just_pressed(&PlayerViewAction::ExitGame) {
                 ev_exit.send(AppExit::Success);
@@ -358,7 +362,7 @@ fn handle_build_state_input(
 fn handle_build_state_cancel_event(
     trigger: Trigger<BuildStateCancelEvent>,
     mut q: Query<&mut PlayerState>,
-    mut ev_state: EventWriter<PlayerStateEvent>,
+    mut ev_state: EventWriter<PlayerStateChangedEvent>,
     mut c: Commands,
 ) {
     let e = trigger.entity();

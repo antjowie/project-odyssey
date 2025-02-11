@@ -30,18 +30,12 @@ fn init_selected_materials(mut c: Commands, mut materials: ResMut<Assets<Standar
 fn update_selected(
     mut c: Commands,
     mut q: Query<(&mut MeshMaterial3d<StandardMaterial>, Option<&Selected>), With<Selectable>>,
-    player: Single<(
-        Entity,
-        &mut PlayerState,
-        &PlayerCursor,
-        &ActionState<PlayerViewAction>,
-    )>,
+    player: Single<(&PlayerState, &PlayerCursor, &ActionState<PlayerViewAction>)>,
     mut ray_cast: MeshRayCast,
     mut selected: ResMut<SelectedStore>,
     material: Res<SelectedMaterial>,
-    mut ev_player_state: EventWriter<PlayerStateEvent>,
 ) {
-    let (state_e, mut state, cursor, input) = player.into_inner();
+    let (state, cursor, input) = player.into_inner();
     if *state != PlayerState::Viewing {
         if let Some(e) = selected.selected {
             if let Some(mut c) = c.get_entity(e) {
@@ -58,9 +52,6 @@ fn update_selected(
         let mut e = None;
         if hits.len() > 0 && q.contains(hits[0].0) {
             e = Some(hits[0].0);
-        } else if selected.selected.is_none() {
-            state.set(PlayerState::Building, &mut c, state_e, &mut ev_player_state);
-            return;
         }
 
         if selected.selected != e {

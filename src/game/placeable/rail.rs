@@ -10,7 +10,6 @@ use cursor_feedback::CursorFeedback;
 use uuid::Uuid;
 
 use crate::spline::*;
-use rail_graph::*;
 use rail_planner::*;
 
 pub mod rail_graph;
@@ -33,6 +32,8 @@ pub(super) fn rail_plugin(app: &mut App) {
 }
 
 const RAIL_MIN_LENGTH: f32 = 10.;
+const RAIL_WIDTH: f32 = 4.0;
+const RAIL_HEIGHT: f32 = 0.5;
 const RAIL_MIN_DELTA_RADIANS: f32 = 15.0 * PI / 180.;
 const RAIL_MAX_RADIANS: f32 = 10. * PI / 180.;
 const RAIL_CURVES_MAX: usize = (PI / RAIL_MIN_DELTA_RADIANS) as usize;
@@ -55,8 +56,8 @@ pub struct RailAsset {
 /// Contains the details to build and connect a rail
 #[derive(Component)]
 #[require(
-    Spline(|| Spline::default().with_min_segment_length(RAIL_MIN_LENGTH).with_height(0.5)), 
-    SplineMesh(|| SplineMesh::default().with_width(4.0)), 
+    Spline(|| Spline::default().with_min_segment_length(RAIL_MIN_LENGTH).with_height(RAIL_HEIGHT)), 
+    SplineMesh(|| SplineMesh::default().with_width(RAIL_WIDTH)), 
     Placeable(||Placeable::Rail), 
     Name(|| Name::new("Rail")))]
 pub struct Rail {
@@ -70,17 +71,16 @@ impl Rail {
         plan: &RailPlanner,
         spline: &Spline,
         rail_asset: &RailAsset,
-        mut graph: &mut RailGraph,
     ) -> Rail {
         let start = spline.controls()[0].pos;
         let end = spline.controls()[1].pos;
 
         let start_intersection_id = plan.start_intersection_id.unwrap_or_else(|| {
-            intersections.create_new_intersection(start, spline.controls()[0].forward, &mut graph)
+            intersections.create_new_intersection(start, spline.controls()[0].forward)
         });
 
         let end_intersection_id = plan.end_intersection_id.unwrap_or_else(|| {
-            intersections.create_new_intersection(end, -spline.controls()[1].forward, &mut graph)
+            intersections.create_new_intersection(end, -spline.controls()[1].forward)
         });
 
         let self_state = Rail {
@@ -217,7 +217,6 @@ impl Rail {
         mut c: &mut Commands,
         mut intersections: &mut ResMut<RailIntersections>,
         rail_asset: &RailAsset,
-        mut graph: &mut RailGraph,
         modified_intersection_ids: &mut Vec<Uuid>,
         mut ev_rail_removed: &mut EventWriter<RailRemovedEvent>,
         mut ev_intersection_removed: &mut EventWriter<RailIntersectionRemovedEvent>,
@@ -247,7 +246,6 @@ impl Rail {
             &start_plan,
             &start_spline,
             &rail_asset,
-            &mut graph,
         );
         start_entity.insert((start_rail, start_spline));
 
@@ -264,7 +262,6 @@ impl Rail {
             &end_plan,
             &end_spline,
             &rail_asset,
-            &mut graph,
         );
         end_entity.insert((end_rail, end_spline));
 
@@ -410,7 +407,6 @@ impl RailIntersections {
         &mut self,
         pos: Vec3,
         right_forward: Dir3,
-        graph: &mut RailGraph,
     ) -> Uuid {
         let uuid = Uuid::new_v4();
         let intersection = RailIntersection::new(uuid, pos, right_forward);
@@ -439,7 +435,8 @@ pub struct RailIntersection {
 
 impl RailIntersection {
     pub fn new(uuid: Uuid, pos: Vec3, right_forward: Dir3) -> Self {
-        const SIZE: f32 = 2.5;
+        // 0.25 padding to prevent hovering over a rail edge, causing a crash
+        const SIZE: f32 = RAIL_WIDTH * 0.5 + 0.25;
 
         RailIntersection {
             uuid,

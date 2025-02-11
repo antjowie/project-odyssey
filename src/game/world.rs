@@ -1,7 +1,6 @@
 //! Loads our initial world
 use super::*;
 use bevy::pbr::{CascadeShadowConfigBuilder, DirectionalLightShadowMap, NotShadowCaster};
-use bevy_egui::egui::util::id_type_map::TypeId;
 
 pub(super) fn world_plugin(app: &mut App) {
     app.add_systems(Startup, spawn_test_world);

@@ -7,7 +7,7 @@
 //! We store this as seperate graphs, as construction can be done on worked
 //! threads and we want to optimize the graphs for algorithm
 use avian3d::math::FRAC_PI_2;
-use bevy::{color::palettes::tailwind::GRAY_500, ecs::traversal, prelude::*};
+use bevy::{color::palettes::tailwind::GRAY_500, prelude::*};
 use petgraph::{algo::astar, prelude::*};
 use uuid::Uuid;
 

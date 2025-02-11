@@ -22,6 +22,7 @@ Rail editor
 - [ ] Add copy pasta? 
 - [x] Return positions uniformly spaced
 - [ ] Validate against overlapping rails where curve intersects < 45 degrees
+- [x] Add placeable picker
 
 Train
 - [x] Support placing and creating different things on rails

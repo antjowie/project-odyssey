@@ -23,8 +23,8 @@ pub fn rail_planner_plugin(app: &mut App) {
 
 #[derive(Component)]
 #[require(
-    Spline(|| Spline::default().with_min_segment_length(RAIL_MIN_LENGTH).with_height(0.5)), 
-    SplineMesh(|| SplineMesh::default().with_width(4.0)), 
+    Spline(|| Spline::default().with_min_segment_length(RAIL_MIN_LENGTH).with_height(RAIL_HEIGHT)), 
+    SplineMesh(|| SplineMesh::default().with_width(RAIL_WIDTH)), 
     NotShadowCaster
 )]
 pub struct RailPlanner {
@@ -113,7 +113,7 @@ fn update_intitial_rail_planner(
     q: Query<Entity, With<RailPlanner>>,
     player_state: Query<(Entity, &PlayerCursor, &ActionState<PlayerBuildAction>)>,
     intersections: Res<RailIntersections>,
-    mut event: EventReader<PlayerStateEvent>,
+    mut event: EventReader<PlayerStateChangedEvent>,
     asset: Res<RailAsset>,
     mut ray_cast: MeshRayCast,
     mut rails: Query<(Entity, &Rail, &Spline), Without<PlaceablePreview>>,
@@ -245,7 +245,6 @@ fn update_rail_planner(
     mut ray_cast: MeshRayCast,
     // prev_hover, should_align
     mut align_to_right: Local<(bool, bool)>,
-    mut graph: ResMut<RailGraph>,
     mut ev_changed: EventWriter<RailIntersectionChangedEvent>,
     mut ev_rail_removed: EventWriter<RailRemovedEvent>,
     mut ev_intersection_removed: EventWriter<RailIntersectionRemovedEvent>,
@@ -446,7 +445,6 @@ fn update_rail_planner(
                         &plan,
                         &spline,
                         &asset,
-                        &mut graph,
                     );
 
                     // Rail is inserted at the end because it moves rail, which is still used
@@ -471,11 +469,10 @@ fn update_rail_planner(
                             &mut c,
                             &mut intersections,
                             &asset,
-                            &mut graph,
                             &mut modified_intersection_ids,
                             &mut ev_rail_removed,
                             &mut ev_intersection_removed,
-                            None,
+                           None,
                         );
                     }
 
@@ -489,7 +486,6 @@ fn update_rail_planner(
                             &mut c,
                             &mut intersections,
                             &asset,
-                            &mut graph,
                             &mut modified_intersection_ids,
                             &mut ev_rail_removed,
                             &mut ev_intersection_removed,

@@ -170,8 +170,6 @@ fn handle_train_placement(
     rails: Query<&Spline, With<Rail>>,
     mut gizmos: Gizmos,
     mut ray_cast: MeshRayCast,
-    mut previous_had_hit: Local<bool>,
-    mut align_to_right: Local<bool>,
     train: Res<TrainAsset>,
     spatial_query: SpatialQuery,
 ) {
@@ -182,50 +180,48 @@ fn handle_train_placement(
 
     let (mut cursor, input) = q.single_mut();
     let mut pos = cursor.build_pos;
-    let mut forward = preview.0.forward();
+    let mut spline_forward = preview.0.forward();
     let mut target_rail = None;
     let mut target_spline = None;
 
     let hit = get_closest_rail(cursor.ray, &mut ray_cast, &rails);
-    if let Some(hit) = hit {
+    if let Some(hit) = &hit {
         if let Ok(spline) = rails.get(hit.0) {
             let t = spline.t_from_pos(&pos);
             pos = spline.projected_position(t);
-            forward = spline.forward(t);
+            spline_forward = spline.forward(t);
             cursor.manual_rotation = 0.0;
             gizmos.line(pos, hit.1.point, RED_500);
             for point in spline.curve_points() {
                 gizmos.sphere(Isometry3d::from_translation(*point), 0.2, RED_500);
             }
 
-            if !*previous_had_hit {
-                *align_to_right = forward.dot(preview.0.forward().as_vec3()) > 0.;
-            }
+            // Align to closes orientation
+            let mut align_to_right = spline_forward.dot(preview.0.forward().as_vec3()) > 0.;
 
             if input.just_pressed(&PlayerBuildAction::Rotate) {
-                *align_to_right = !*align_to_right;
+                align_to_right = !align_to_right;
             }
 
-            if !*align_to_right {
-                forward = Dir3::new(forward.as_vec3() * -1.0).unwrap();
-            }
+            spline_forward = if align_to_right {
+                spline_forward
+            } else {
+                Dir3::new(spline_forward.as_vec3() * -1.0).unwrap()
+            };
 
             target_rail = Some(hit.0);
             target_spline = Some(spline);
-            *previous_had_hit = true;
         }
     } else {
-        forward = Quat::from_rotation_y(cursor.manual_rotation) * forward;
-
-        *previous_had_hit = false;
+        spline_forward = Quat::from_rotation_y(cursor.manual_rotation) * spline_forward;
     }
 
     cursor.manual_rotation = 0.0;
     preview.0.translation = pos;
-    preview.0.look_at(pos + forward.as_vec3(), Vec3::Y);
+    preview.0.look_at(pos + spline_forward.as_vec3(), Vec3::Y);
 
     // Overlap check for other trains
-    let can_place = *previous_had_hit
+    let can_place = hit.is_some()
         && spatial_query
             .shape_intersections(
                 &train.collider,
