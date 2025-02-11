@@ -71,6 +71,79 @@ pub struct RailGraph {
 pub struct RailGraphTraverseResult {
     pub cost: u32,
     pub traversal: Vec<RailGraphTraversal>,
+    pub points: Vec<Vec3>,
+}
+
+impl RailGraphTraverseResult {
+    pub fn new(
+        cost: Option<u32>,
+        traversal: Vec<RailGraphTraversal>,
+        start_pos: Vec3,
+        end_pos: Vec3,
+        rails: &Query<(&Rail, &Spline)>,
+    ) -> Self {
+        let mut points = vec![start_pos];
+        let len = traversal.len();
+        points.append(
+            &mut traversal
+                .iter()
+                .enumerate()
+                .map(|(i, x)| {
+                    let (_rail, spline) = rails.get(x.rail).unwrap();
+                    let mut points = spline.curve_points().to_owned();
+
+                    if !x.rail_at_start {
+                        points.reverse();
+                    }
+
+                    if i == 0 {
+                        let t = spline.t_from_pos(&start_pos);
+                        if x.rail_at_start {
+                            points = points
+                                .into_iter()
+                                .filter(|x| spline.t_from_pos(x) > t)
+                                .collect();
+                        } else {
+                            points = points
+                                .into_iter()
+                                .filter(|x| spline.t_from_pos(x) < t)
+                                .collect();
+                        }
+                    }
+                    if i == len - 1 {
+                        let t = spline.t_from_pos(&end_pos);
+                        if x.rail_at_start {
+                            points = points
+                                .into_iter()
+                                .filter(|x| spline.t_from_pos(x) < t)
+                                .collect();
+                        } else {
+                            points = points
+                                .into_iter()
+                                .filter(|x| spline.t_from_pos(x) > t)
+                                .collect();
+                        }
+                    }
+
+                    points
+                })
+                .flatten()
+                .collect(),
+        );
+        points.push(end_pos);
+
+        RailGraphTraverseResult {
+            cost: cost.unwrap_or(
+                points
+                    .iter()
+                    .zip(points.iter().skip(1))
+                    .fold(0.0, |acc, (x, y)| acc + x.distance(*y))
+                    .round() as u32,
+            ),
+            traversal,
+            points,
+        }
+    }
 }
 
 pub struct RailGraphTraversal {
@@ -139,15 +212,21 @@ impl RailGraph {
         intersections: &RailIntersections,
         rails: &Query<(&Rail, &Spline)>,
     ) -> Option<RailGraphTraverseResult> {
-        let (rail, spline) = rails.get(from_rail).expect("Passed in a non-existing rail");
+        let (start_rail, start_spline) = rails
+            .get(from_rail)
+            .expect("Traversing from non-existing rail");
+        let (_end_rail, end_spline) = rails.get(to_rail).expect("Traversing to non-existing rail");
 
         // Handle case where we nav to same rail and we don't have to path find
-        let travel_right = spline.forward(from_t).dot(current_dir.as_vec3()) > 0.0;
+        let travel_right = start_spline.forward(from_t).dot(current_dir.as_vec3()) > 0.0;
+        let from_pos = start_spline.position(from_t);
+        let to_pos = end_spline.position(end_spline.t_from_pos(to_pos));
+
         if from_rail == to_rail {
-            let to_t = spline.t_from_pos(to_pos);
+            let to_t = start_spline.t_from_pos(&to_pos);
             if (travel_right && to_t > from_t) || (travel_right == false && to_t < from_t) {
                 let traversal = RailGraphTraversal {
-                    from: rail
+                    from: start_rail
                         .far_intersection(
                             &next_intersection.collision.center.into(),
                             &intersections,
@@ -158,10 +237,13 @@ impl RailGraph {
                     rail_at_start: travel_right,
                 };
 
-                return Some(RailGraphTraverseResult {
-                    cost: 10,
-                    traversal: vec![traversal],
-                });
+                return Some(RailGraphTraverseResult::new(
+                    None,
+                    vec![traversal],
+                    from_pos,
+                    to_pos,
+                    rails,
+                ));
             }
         }
 
@@ -225,7 +307,7 @@ impl RailGraph {
             },
             |node| {
                 let node = self.graph.node_weight(node).unwrap();
-                node.pos.distance_squared(*to_pos).round() as u32
+                node.pos.distance_squared(to_pos).round() as u32
             },
         );
 
@@ -234,7 +316,7 @@ impl RailGraph {
             traversal.push(
                 intersections
                     .intersections
-                    .get(&rail.joints[if travel_right { 0 } else { 1 }].intersection_id)
+                    .get(&start_rail.joints[if travel_right { 0 } else { 1 }].intersection_id)
                     .unwrap(),
             );
             traversal.append(
@@ -256,9 +338,9 @@ impl RailGraph {
                     .unwrap(),
             );
 
-            Some(RailGraphTraverseResult {
-                cost: path.0,
-                traversal: traversal
+            Some(RailGraphTraverseResult::new(
+                Some(path.0),
+                traversal
                     .iter()
                     .zip(traversal.iter().skip(1))
                     .map(|(x, y)| {
@@ -287,7 +369,10 @@ impl RailGraph {
                         }
                     })
                     .collect(),
-            })
+                from_pos,
+                to_pos,
+                &rails,
+            ))
         } else {
             None
         }

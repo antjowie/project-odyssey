@@ -1,4 +1,4 @@
-use super::{rail::rail_graph::RailGraph, *};
+use super::{rail::rail_graph::*, *};
 use crate::spline::Spline;
 use avian3d::prelude::*;
 use bevy_rand::{global::GlobalEntropy, prelude::*};
@@ -25,6 +25,7 @@ pub struct Train {
     /// The alpha on the current rail the train is traversing
     pub t: f32,
     pub rail: Entity,
+    pub plan: Option<RailGraphTraverseResult>,
 }
 
 impl Train {
@@ -242,6 +243,7 @@ fn handle_train_placement(
             Train {
                 t: target_spline.unwrap().t_from_pos(&pos),
                 rail: target_rail.unwrap(),
+                plan: None,
             },
             preview.0.clone(),
             Mesh3d(train.mesh.clone()),
@@ -304,61 +306,12 @@ fn calculate_path(
         );
 
         if let Some(path) = path {
-            let mut points = vec![t.translation];
-            let len = path.traversal.len();
-            points.append(
-                &mut path
-                    .traversal
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, x)| {
-                        let (_rail, spline) = rails.get(x.rail).unwrap();
-                        let mut points = spline.curve_points().to_owned();
-
-                        if !x.rail_at_start {
-                            points.reverse();
-                        }
-
-                        if i == 0 {
-                            let t = spline.t_from_pos(&t.translation);
-                            if x.rail_at_start {
-                                points = points
-                                    .into_iter()
-                                    .filter(|x| spline.t_from_pos(x) > t)
-                                    .collect();
-                            } else {
-                                points = points
-                                    .into_iter()
-                                    .filter(|x| spline.t_from_pos(x) < t)
-                                    .collect();
-                            }
-                        }
-                        if i == len - 1 {
-                            let t = spline.t_from_pos(&end[0].1.point);
-                            if x.rail_at_start {
-                                points = points
-                                    .into_iter()
-                                    .filter(|x| spline.t_from_pos(x) < t)
-                                    .collect();
-                            } else {
-                                points = points
-                                    .into_iter()
-                                    .filter(|x| spline.t_from_pos(x) > t)
-                                    .collect();
-                            }
-                        }
-
-                        points
-                    })
-                    .flatten()
-                    .collect(),
-            );
-
-            points.push(end[0].1.point);
-
-            points.iter().zip(points.iter().skip(1)).for_each(|(x, y)| {
-                gizmos.arrow(*x, *y, Color::WHITE).with_tip_length(0.5);
-            });
+            path.points
+                .iter()
+                .zip(path.points.iter().skip(1))
+                .for_each(|(x, y)| {
+                    gizmos.arrow(*x, *y, Color::WHITE).with_tip_length(0.5);
+                });
         }
     }
 }
