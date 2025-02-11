@@ -39,7 +39,7 @@ Input
 
 Pathfinding
 - [x] Generate nav graph for rail
-- [ ] Support setting destinations
+- [x] Support setting destinations
   - Need to somehow know which node depending on which segment we hovered
 - [ ] Add traffic control via signals
   - I'm thinking of each link having a traffic id which maps to a map

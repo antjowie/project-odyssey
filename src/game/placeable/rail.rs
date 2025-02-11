@@ -333,12 +333,14 @@ impl Rail {
 pub enum TraverseResult {
     /// We have finished calculating our position if we would traverse
     End { t: f32, pos: Vec3, forward: Dir3 },
-    /// We have reached the end of the spline, and can
+    /// We have reached the end of the spline
     Intersection {
+        /// T of the current spline, if we are at end, it will be 1
         t: f32,
         pos: Vec3,
         forward: Dir3,
         remaining_distance: f32,
+        /// The ID of the intersection we're at
         intersection_id: Uuid,
     },
 }

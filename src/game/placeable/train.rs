@@ -1,9 +1,7 @@
 use super::{rail::rail_graph::*, *};
 use crate::spline::Spline;
 use avian3d::prelude::*;
-use bevy_rand::{global::GlobalEntropy, prelude::*};
 use rail::Rail;
-use rand_core::RngCore;
 
 pub(super) fn train_plugin(app: &mut App) {
     app.add_systems(Startup, load_train_asset);
@@ -13,8 +11,8 @@ pub(super) fn train_plugin(app: &mut App) {
             handle_train_placement.run_if(
                 in_player_state(PlayerState::Building).and(is_placeable_preview(Placeable::Train)),
             ),
-            move_trains,
-            calculate_path,
+            move_trains_with_plan,
+            calculate_plan,
         ),
     );
 }
@@ -39,7 +37,7 @@ impl Train {
         spline: &Spline,
         rails: &Query<(&Rail, &Spline)>,
         intersections: &RailIntersections,
-        rng: &mut GlobalEntropy<WyRand>,
+        plan: &RailGraphTraverseResult,
     ) -> TrainTraverseResult {
         match rail.traverse(t, &forward, distance, spline) {
             TraverseResult::Intersection {
@@ -52,6 +50,7 @@ impl Train {
                 let intersection = intersections.intersections.get(&intersection_id).unwrap();
                 let options = intersection.curve_options(&forward);
                 if options.is_empty() {
+                    // We'll remain here, stuck forever...
                     // For now we'll just flip the train
                     self.traverse(
                         remaining_distance,
@@ -62,11 +61,16 @@ impl Train {
                         spline,
                         rails,
                         intersections,
-                        rng,
+                        &plan,
                     )
                 } else {
-                    // For now pick random rail option
-                    let new_rail_id = options[rng.next_u32() as usize % options.len()];
+                    let decision = plan
+                        .traversal
+                        .iter()
+                        .find(|x| x.from.uuid == intersection_id)
+                        .expect("The passed plan is invalid, could not find next intersection");
+
+                    let new_rail_id = decision.rail;
                     let (new_rail, new_spline) = rails.get(new_rail_id).unwrap();
                     let t = new_spline.t_from_pos(&pos).round();
                     self.traverse(
@@ -78,7 +82,7 @@ impl Train {
                         new_spline,
                         rails,
                         intersections,
-                        rng,
+                        &plan,
                     )
                 }
             }
@@ -87,6 +91,7 @@ impl Train {
                 pos,
                 forward,
                 rail: rail_id,
+                reached_destination: pos.distance_squared(plan.end_position) < 0.1,
             },
         }
     }
@@ -97,6 +102,7 @@ pub struct TrainTraverseResult {
     pub pos: Vec3,
     pub forward: Dir3,
     pub rail: Entity,
+    pub reached_destination: bool,
 }
 
 #[derive(Resource)]
@@ -125,41 +131,59 @@ fn load_train_asset(
     });
 }
 
-fn move_trains(
+fn move_trains_with_plan(
     mut q: Query<(&mut Transform, &mut Train)>,
     rails: Query<(&Rail, &Spline)>,
     time: Res<Time>,
     intersections: Res<RailIntersections>,
-    mut rng: GlobalEntropy<WyRand>,
-    // mut gizmos: Gizmos,
+    // mut rng: GlobalEntropy<WyRand>,
+    mut gizmos: Gizmos,
 ) {
     q.iter_mut().for_each(|(mut t, mut train)| {
         let (rail, spline) = rails.get(train.rail).unwrap();
-        let distance = 10.0 * time.delta_secs();
-        let result = train.traverse(
-            distance,
-            train.t,
-            t.forward(),
-            train.rail,
-            rail,
-            spline,
-            &rails,
-            &intersections,
-            &mut rng,
-        );
+        if let Some(plan) = &train.plan {
+            let distance = 10.0 * time.delta_secs();
+            let remaining_distance = if train.rail == plan.traversal.last().unwrap().rail {
+                plan.end_position.distance(t.translation)
+            } else {
+                distance
+            };
 
-        // let delta = result.pos - t.translation;
-        // for i in 0..200 {
-        //     let i = i as f32;
-        //     let pos = t.translation + delta * i;
-        //     gizmos.sphere(Isometry3d::from_translation(pos.clone()), 0.3, GREEN_500);
-        // }
+            let result = train.traverse(
+                distance.min(remaining_distance),
+                train.t,
+                t.forward(),
+                train.rail,
+                rail,
+                spline,
+                &rails,
+                &intersections,
+                &plan,
+            );
 
-        train.rail = result.rail;
-        train.t = result.t;
-        t.translation = result.pos;
-        let up = t.up();
-        t.look_at(result.pos + result.forward.as_vec3(), up);
+            // let delta = result.pos - t.translation;
+            // for i in 0..200 {
+            //     let i = i as f32;
+            //     let pos = t.translation + delta * i;
+            //     gizmos.sphere(Isometry3d::from_translation(pos.clone()), 0.3, GREEN_500);
+            // }
+
+            let points = plan.points(&t.translation, &plan.end_position, train.rail, &rails);
+            points.iter().zip(points.iter().skip(1)).for_each(|(x, y)| {
+                gizmos
+                    .arrow(*x, *y, Color::srgb(0.5, 0.5, 0.5))
+                    .with_tip_length(0.5);
+            });
+
+            train.rail = result.rail;
+            train.t = result.t;
+            if result.reached_destination {
+                train.plan = None;
+            }
+            t.translation = result.pos;
+            let up = t.up();
+            t.look_at(result.pos + result.forward.as_vec3(), up);
+        }
     });
 }
 
@@ -250,19 +274,21 @@ fn handle_train_placement(
     }
 }
 
-fn calculate_path(
-    q: Query<(&Transform, &Train), With<Selected>>,
-    mut rails: Query<(&Rail, &Spline), Without<PlaceablePreview>>,
+fn calculate_plan(
+    mut q: Query<(&Transform, &mut Train), With<Selected>>,
+    rails: Query<(&Rail, &Spline)>,
     graph: Res<RailGraph>,
-    cursor: Single<&PlayerCursor>,
+    player: Single<(&PlayerCursor, &ActionState<PlayerViewAction>)>,
     mut ray_cast: MeshRayCast,
     intersections: Res<RailIntersections>,
     mut gizmos: Gizmos,
+    mut ev: EventWriter<SelectedChangedEvent>,
 ) {
     if q.is_empty() {
         return;
     }
 
+    let (cursor, input) = player.into_inner();
     let end = ray_cast.cast_ray(
         cursor.ray,
         &RayCastSettings::default()
@@ -273,7 +299,7 @@ fn calculate_path(
         return;
     }
 
-    for (t, train) in q.iter() {
+    for (t, mut train) in q.iter_mut() {
         let (start, spline) = rails.get(train.rail).unwrap();
         let next = match start.traverse(train.t, &t.forward(), spline.curve_length() * 2.0, &spline)
         {
@@ -289,7 +315,7 @@ fn calculate_path(
             }
         };
 
-        let path = graph.get_path(
+        let plan = graph.get_path(
             train.t,
             train.rail,
             &t.forward(),
@@ -298,16 +324,19 @@ fn calculate_path(
             end[0].0,
             &end[0].1.point,
             &intersections,
-            &rails.transmute_lens::<(&Rail, &Spline)>().query(),
+            &rails,
         );
 
-        if let Some(path) = path {
-            path.points
-                .iter()
-                .zip(path.points.iter().skip(1))
-                .for_each(|(x, y)| {
-                    gizmos.arrow(*x, *y, Color::WHITE).with_tip_length(0.5);
-                });
+        if let Some(plan) = plan {
+            let points = plan.points(&t.translation, &plan.end_position, train.rail, &rails);
+            points.iter().zip(points.iter().skip(1)).for_each(|(x, y)| {
+                gizmos.arrow(*x, *y, Color::WHITE).with_tip_length(0.5);
+            });
+
+            if input.just_pressed(&PlayerViewAction::Interact) {
+                train.plan = Some(plan);
+                ev.send(SelectedChangedEvent(None));
+            }
         }
     }
 }
