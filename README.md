@@ -29,8 +29,8 @@ Train
 - [x] Add train and have them drive
 - [ ] Add stations
 - [ ] Support specifying stations for trains
-- [ ] Support train moving along a planned route
-- [ ] Respect traffic groups
+- [x] Support train moving along a planned route
+- [ ] Add traffic control
 - [ ] Collision response
 
 Input
@@ -41,12 +41,18 @@ Pathfinding
 - [x] Generate nav graph for rail
 - [x] Support setting destinations
   - Need to somehow know which node depending on which segment we hovered
+    - Didn't need to account for this, we just take the shortest round but if needed we can always add rotate behavior and get the longer route to the spot
 - [ ] Add traffic control via signals
   - I'm thinking of each link having a traffic id which maps to a map
   - Then in the map we track which trains are on which tracks, so we can use this to calc weights and such
 
 General gameplay
 - [x] Generic cursor feedback
+- [ ] Add outline shader system
+- [ ] Create better shadows 
+- [ ] Build spline mesh from existing model
+- [ ] Replace train with mesh
+- [ ] Investigate into better rail system (perhaps preset matching)
 - [ ] Add save and load
 
 ### Build

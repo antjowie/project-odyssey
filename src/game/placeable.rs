@@ -1,5 +1,6 @@
 //! Any placeable are things that can be placed
 use super::*;
+use avian3d::prelude::Collider;
 use bevy::{ecs::traversal::Traversal, pbr::NotShadowCaster};
 
 use destroyer::*;
@@ -23,14 +24,15 @@ pub(super) fn placeable_plugin(app: &mut App) {
             cleanup_build_preview_on_state_change.run_if(on_event::<PlayerStateChangedEvent>),
             update_picked_placeable.run_if(in_player_state(PlayerState::Building)),
             on_placeable_preview_changed_event.run_if(on_event::<PlaceablePreviewChangedEvent>),
+            generate_collider_on_mesh_changed,
             (
-                on_add_build_preview_component,
-                update_build_preview_material,
+                on_placeable_preview_added,
+                update_placeable_preview_material,
             )
                 .chain(),
         ),
     );
-    app.add_systems(PostUpdate, on_remove_build_preview_component);
+    app.add_systems(PostUpdate, on_placeable_preview_removed);
 }
 
 /// Represents a placeable type
@@ -82,7 +84,6 @@ fn load_placeable_assets(mut c: Commands, mut materials: ResMut<Assets<StandardM
 pub struct PlaceablePreview {
     /// Represents the PlayerState that spawned this
     state_instigator: Entity,
-    orig_material: MeshMaterial3d<StandardMaterial>,
     pub valid: bool,
 }
 
@@ -90,7 +91,6 @@ impl PlaceablePreview {
     pub fn new(state_instigator: Entity) -> PlaceablePreview {
         PlaceablePreview {
             state_instigator,
-            orig_material: MeshMaterial3d::<StandardMaterial>::default(),
             valid: false,
         }
     }
@@ -124,7 +124,7 @@ fn on_placeable_preview_changed_event(
             Without<PlaceablePreview>,
         ),
     >,
-    train_asset: Res<TrainAsset>,
+    train: Res<TrainAsset>,
 ) {
     let e_player = player.into_inner();
 
@@ -139,10 +139,10 @@ fn on_placeable_preview_changed_event(
             Placeable::Rail => {}
             Placeable::Train => {
                 c.spawn((
+                    Name::new("TrainPreview"),
                     PlaceablePreview::new(e_player),
-                    Mesh3d(train_asset.mesh.clone()),
-                    MeshMaterial3d(train_asset.material.clone()),
-                    t.unwrap_or_default(),
+                    SceneRoot(train.scene.clone()),
+                    t.unwrap_or_default().with_scale(train.scale),
                 ));
             }
             Placeable::Destroyer => {}
@@ -166,48 +166,65 @@ fn cleanup_build_preview_on_state_change(
     }
 }
 
-fn on_add_build_preview_component(
+fn generate_collider_on_mesh_changed(
     mut c: Commands,
-    mut q: Query<
-        (
-            Entity,
-            &MeshMaterial3d<StandardMaterial>,
-            &mut PlaceablePreview,
-        ),
-        (With<Placeable>, Added<PlaceablePreview>),
-    >,
+    q: Query<(Entity, &Mesh3d), Changed<Mesh3d>>,
+    meshes: Res<Assets<Mesh>>,
 ) {
-    q.iter_mut().for_each(|(e, handle, mut preview)| {
-        c.entity(e)
-            .insert((NotShadowCaster, PickingBehavior::IGNORE));
-        preview.orig_material = handle.clone();
+    q.iter().for_each(|(e, mesh)| {
+        if let Some(mesh) = meshes.get(mesh) {
+            if let Some(collider) = Collider::trimesh_from_mesh(&mesh) {
+                // if let Some(collider) = Collider::convex_hull_from_mesh(&mesh) {
+                c.entity(e).insert(collider);
+            }
+        }
     });
 }
 
-fn on_remove_build_preview_component(
+fn on_placeable_preview_added(
     mut c: Commands,
-    mut q: Query<(&mut MeshMaterial3d<StandardMaterial>, &PlaceablePreview), With<Placeable>>,
+    q: Query<Entity, (With<Placeable>, Added<PlaceablePreview>)>,
+) {
+    q.iter().for_each(|e| {
+        c.entity(e)
+            .insert((NotShadowCaster, PickingBehavior::IGNORE));
+    });
+}
+
+/// NOTE: This is a bit redundant, as currently adding a preview component is destructive
+///     You can't undo adding this component, no need to restore materials
+fn on_placeable_preview_removed(
+    mut c: Commands,
+    mut q: Query<(), With<PlaceablePreview>>,
     mut removed: RemovedComponents<PlaceablePreview>,
 ) {
     for entity in removed.read() {
-        if let Ok((mut handle, preview)) = q.get_mut(entity) {
+        if let Ok(()) = q.get_mut(entity) {
             c.entity(entity).remove::<NotShadowCaster>();
             c.entity(entity).remove::<PickingBehavior>();
-            *handle = preview.orig_material.clone();
         }
     }
 }
 
-fn update_build_preview_material(
-    mut q: Query<(&mut MeshMaterial3d<StandardMaterial>, &PlaceablePreview)>,
+fn update_placeable_preview_material(
+    parent: Query<(Entity, &PlaceablePreview), Changed<PlaceablePreview>>,
+    children: Query<&Children>,
+    mut q: Query<&mut MeshMaterial3d<StandardMaterial>>,
     preview_material: Res<PlaceablePreviewMaterial>,
 ) {
-    q.iter_mut().for_each(|(mut mat, preview)| {
-        if preview.valid && mat.0 != preview_material.valid {
-            mat.0 = preview_material.valid.clone();
-        } else if !preview.valid && mat.0 != preview_material.invalid {
-            mat.0 = preview_material.invalid.clone();
+    parent.iter().for_each(|(e, preview)| {
+        let mut handle = |entity| {
+            if let Ok(mut mat) = q.get_mut(entity) {
+                if preview.valid && mat.0 != preview_material.valid {
+                    mat.0 = preview_material.valid.clone();
+                } else if !preview.valid && mat.0 != preview_material.invalid {
+                    mat.0 = preview_material.invalid.clone();
+                };
+            }
         };
+
+        handle(e);
+        children.iter_descendants(e).for_each(handle);
     });
 }
 

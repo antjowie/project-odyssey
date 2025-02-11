@@ -37,9 +37,10 @@ fn spawn_test_world(
     ));
 
     // Sun
-    // c.insert_resource(DirectionalLightShadowMap { size: 4096 });
+    c.insert_resource(DirectionalLightShadowMap { size: 4096 });
+    // These options below make my laptop die
     // c.insert_resource(DirectionalLightShadowMap { size: 8192 });
-    c.insert_resource(DirectionalLightShadowMap { size: 8192 + 4096 });
+    // c.insert_resource(DirectionalLightShadowMap { size: 8192 + 4096 });
 
     let cascade_shadow_config = CascadeShadowConfigBuilder {
         // num_cascades: 4,

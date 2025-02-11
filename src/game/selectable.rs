@@ -33,7 +33,10 @@ struct SelectedStore {
 }
 
 #[derive(Component)]
-pub struct Selected(Handle<StandardMaterial>);
+pub struct Selected;
+
+#[derive(Component)]
+struct SelectedOriginalMaterial(Handle<StandardMaterial>);
 
 #[derive(Component, Default)]
 pub struct Selectable;
@@ -47,6 +50,7 @@ fn init_selected_materials(mut c: Commands, mut materials: ResMut<Assets<Standar
 
 fn handle_selected_input_in_view_state(
     q: Query<(), With<Selectable>>,
+    parents: Query<&Parent>,
     player: Single<(&PlayerCursor, &ActionState<PlayerViewAction>)>,
     mut ray_cast: MeshRayCast,
     mut ev: EventWriter<SelectedChangedEvent>,
@@ -55,8 +59,12 @@ fn handle_selected_input_in_view_state(
     if input.just_pressed(&PlayerViewAction::Interact) {
         let hits = ray_cast.cast_ray(cursor.ray, &RayCastSettings::default().always_early_exit());
         let mut e = None;
-        if hits.len() > 0 && q.contains(hits[0].0) {
-            e = Some(hits[0].0);
+        if hits.len() > 0 {
+            if q.contains(hits[0].0) {
+                e = Some(hits[0].0);
+            } else {
+                e = parents.iter_ancestors(hits[0].0).find(|x| q.contains(*x));
+            }
         }
         ev.send(SelectedChangedEvent(e));
     }
@@ -75,7 +83,11 @@ fn unselect_when_leaving_view_state(
 
 fn on_selected_changed_event(
     mut c: Commands,
-    mut q: Query<(&mut MeshMaterial3d<StandardMaterial>, Option<&Selected>), With<Selectable>>,
+    children: Query<&Children>,
+    mut q: Query<(
+        &mut MeshMaterial3d<StandardMaterial>,
+        Option<&SelectedOriginalMaterial>,
+    )>,
     mut selected: ResMut<SelectedStore>,
     material: Res<SelectedMaterial>,
     mut ev: EventReader<SelectedChangedEvent>,
@@ -84,22 +96,31 @@ fn on_selected_changed_event(
         let e = e.0;
         if selected.selected != e {
             if let Some(e) = selected.selected {
-                if let Some(mut c) = c.get_entity(e) {
-                    let (mut handle, select) = q.get_mut(e).unwrap();
-                    handle.0 = select
-                        .expect("Our stored selected entity has no selected component")
-                        .0
-                        .clone();
+                let mut handle = |entity| {
+                    if let Ok((mut mat, orig)) = q.get_mut(entity) {
+                        mat.0 = orig.unwrap().0.clone();
+                        c.entity(entity).remove::<SelectedOriginalMaterial>();
+                    }
+                };
 
-                    c.remove::<Selected>();
-                }
+                handle(e);
+                children.iter_descendants(e).for_each(handle);
+
+                c.entity(e).remove::<Selected>();
             }
             selected.selected = e;
             if let Some(e) = selected.selected {
-                let (mut handle, _) = q.get_mut(e).unwrap();
-                let select = Selected(handle.0.clone());
-                handle.0 = material.0.clone();
-                c.entity(e).insert(select);
+                let mut handle = |entity| {
+                    if let Ok((mut mat, _orig)) = q.get_mut(entity) {
+                        c.entity(entity)
+                            .insert(SelectedOriginalMaterial(mat.0.clone()));
+                        mat.0 = material.0.clone();
+                    }
+                };
+
+                handle(e);
+                children.iter_descendants(e).for_each(handle);
+                c.entity(e).insert(Selected);
             }
         }
     }

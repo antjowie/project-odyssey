@@ -107,27 +107,16 @@ pub struct TrainTraverseResult {
 
 #[derive(Resource)]
 pub struct TrainAsset {
-    pub mesh: Handle<Mesh>,
-    pub collider: Collider,
-    pub material: Handle<StandardMaterial>,
+    pub scene: Handle<Scene>,
+    pub scale: Vec3,
 }
 
-fn load_train_asset(
-    mut c: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
-    let mesh = meshes.add(Tetrahedron::new(
-        vec3(0.0, 2.0, 2.0),
-        vec3(-2.0, 0.0, 2.0),
-        vec3(2.0, 0.0, 2.0),
-        vec3(0.0, 0.0, -2.0),
-    ));
+fn load_train_asset(mut c: Commands, asset_server: Res<AssetServer>) {
+    let scene = asset_server.load(GltfAssetLabel::Scene(0).from_asset("models/train.glb"));
+
     c.insert_resource(TrainAsset {
-        collider: Collider::convex_hull_from_mesh(&meshes.get(&mesh).unwrap()).unwrap(),
-        mesh,
-        // https://www.designpieces.com/palette/ns-color-palette-hex-and-rgb/
-        material: materials.add(Color::srgb_u8(255, 198, 30)),
+        scene,
+        scale: Vec3::splat(4.0),
     });
 }
 
@@ -136,7 +125,6 @@ fn move_trains_with_plan(
     rails: Query<(&Rail, &Spline)>,
     time: Res<Time>,
     intersections: Res<RailIntersections>,
-    // mut rng: GlobalEntropy<WyRand>,
     mut gizmos: Gizmos,
 ) {
     q.iter_mut().for_each(|(mut t, mut train)| {
@@ -195,7 +183,8 @@ fn handle_train_placement(
     mut gizmos: Gizmos,
     mut ray_cast: MeshRayCast,
     train: Res<TrainAsset>,
-    spatial_query: SpatialQuery,
+    // spatial_query: SpatialQuery,
+    mut feedback: ResMut<CursorFeedback>,
 ) {
     if preview.is_empty() {
         return;
@@ -244,31 +233,41 @@ fn handle_train_placement(
     preview.0.translation = pos;
     preview.0.look_at(pos + spline_forward.as_vec3(), Vec3::Y);
 
-    // Overlap check for other trains
-    let can_place = hit.is_some()
-        && spatial_query
-            .shape_intersections(
-                &train.collider,
-                preview.0.translation,
-                preview.0.rotation,
-                &SpatialQueryFilter::default(),
-            )
-            .len()
-            == 0;
+    // TODO: Overlap check for other trains
+    let collide_with_other = false;
+    // let collide_with_other = hit.is_some() && Collider::int
+    //     && spatial_query
+    //         .shape_intersections(
+    //             &train.collider,
+    //             preview.0.translation,
+    //             preview.0.rotation,
+    //             &SpatialQueryFilter::default(),
+    //         )
+    //         .len()
+    //         == 0;
 
-    preview.1.valid = can_place;
+    preview.1.valid = false;
+    if hit.is_none() {
+        feedback
+            .entries
+            .push(CursorFeedbackData::default().with_error("Not on rail".to_owned()));
+    } else if collide_with_other {
+        feedback
+            .entries
+            .push(CursorFeedbackData::default().with_error("Collide with other train".to_owned()));
+    } else {
+        preview.1.valid = true;
+    }
 
-    if can_place && input.just_pressed(&PlayerBuildAction::Interact) {
+    if preview.1.valid && input.just_pressed(&PlayerBuildAction::Interact) {
         c.spawn((
             Train {
                 t: target_spline.unwrap().t_from_pos(&pos),
                 rail: target_rail.unwrap(),
                 plan: None,
             },
-            preview.0.clone(),
-            Mesh3d(train.mesh.clone()),
-            MeshMaterial3d(train.material.clone()),
-            train.collider.clone(),
+            preview.0.clone().with_scale(train.scale),
+            SceneRoot(train.scene.clone()),
         ))
         .observe(on_destroy_default);
     }
@@ -295,7 +294,8 @@ fn calculate_plan(
             .always_early_exit()
             .with_filter(&|x| rails.contains(x)),
     );
-    if end.is_empty() || rails.contains(end[0].0) == false {
+
+    if end.is_empty() {
         return;
     }
 
