@@ -78,6 +78,7 @@ impl Spline {
         &self.controls
     }
 
+    /// Uniformly spaced points in the curve, length is controlled by min segment length and max segments
     pub fn curve_points(&self) -> &Vec<Vec3> {
         &self.curve_points
     }

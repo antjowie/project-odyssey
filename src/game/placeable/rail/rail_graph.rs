@@ -7,7 +7,7 @@
 //! We store this as seperate graphs, as construction can be done on worked
 //! threads and we want to optimize the graphs for algorithm
 use avian3d::math::FRAC_PI_2;
-use bevy::{color::palettes::tailwind::GRAY_500, prelude::*};
+use bevy::{color::palettes::tailwind::GRAY_500, ecs::traversal, prelude::*};
 use petgraph::{algo::astar, prelude::*};
 use uuid::Uuid;
 
@@ -49,6 +49,7 @@ struct RailGraphNodeBinding {
 }
 
 struct RailGraphEdge {
+    entity: Entity,
     length: f32,
     /// Direction to move along with to follow this edge
     forward: Dir3,
@@ -65,6 +66,20 @@ pub struct RailGraph {
     graph: StableDiGraph<RailGraphNode, RailGraphEdge>,
     intersection_to_binding: HashMap<Uuid, RailGraphNodeBinding>,
     rail_to_edge: HashMap<Entity, RailGraphEdgeBinding>,
+}
+
+pub struct RailGraphTraverseResult {
+    pub cost: u32,
+    pub traversal: Vec<RailGraphTraversal>,
+}
+
+pub struct RailGraphTraversal {
+    pub from: RailIntersection,
+    pub to: RailIntersection,
+    pub rail: Entity,
+    // If from and start of rail are at same pos
+    // If this is not the case, we are traversing in a negative direction over the rail
+    pub rail_at_start: bool,
 }
 
 impl RailGraph {
@@ -111,37 +126,91 @@ impl RailGraph {
     }
 
     /// Returns a vec of intersections to travel through
+    /// The contained items will include the start and end rail
     pub fn get_path(
         &self,
-        from_intersection: &RailIntersection,
-        dir: &Dir3,
+        from_t: f32,
+        from_rail: Entity,
+        current_dir: &Dir3,
+        next_intersection: &RailIntersection,
+        next_intersection_approach_dir: &Dir3,
         to_rail: Entity,
         to_pos: &Vec3,
-    ) -> Option<Vec<Uuid>> {
+        intersections: &RailIntersections,
+        rails: &Query<(&Rail, &Spline)>,
+    ) -> Option<RailGraphTraverseResult> {
+        let (rail, spline) = rails.get(from_rail).expect("Passed in a non-existing rail");
+
+        // Handle case where we nav to same rail and we don't have to path find
+        let travel_right = spline.forward(from_t).dot(current_dir.as_vec3()) > 0.0;
+        if from_rail == to_rail {
+            let to_t = spline.t_from_pos(to_pos);
+            if (travel_right && to_t > from_t) || (travel_right == false && to_t < from_t) {
+                let traversal = RailGraphTraversal {
+                    from: rail
+                        .far_intersection(
+                            &next_intersection.collision.center.into(),
+                            &intersections,
+                        )
+                        .to_owned(),
+                    to: next_intersection.to_owned(),
+                    rail: from_rail,
+                    rail_at_start: travel_right,
+                };
+
+                return Some(RailGraphTraverseResult {
+                    cost: 10,
+                    traversal: vec![traversal],
+                });
+            }
+        }
+
         let rail_binding = self.rail_to_edge.get(&to_rail);
         if rail_binding.is_none() {
             return None;
         }
         let rail_binding = rail_binding.unwrap();
 
-        let start = self.intersection_to_binding.get(&from_intersection.uuid);
+        let start = self.intersection_to_binding.get(&next_intersection.uuid);
         if start.is_none() {
             return None;
         }
         let start = start.unwrap();
 
-        let start = if from_intersection.right_forward.dot(dir.as_vec3()) > 0.0 {
+        let start = if next_intersection
+            .right_forward
+            .dot(next_intersection_approach_dir.as_vec3())
+            > 0.0
+        {
             start.right
         } else {
             start.left
         };
 
+        let mut end_intersection_id = next_intersection.uuid;
         let reached_goal = |node| {
             self.graph
                 .edges_directed(node, Direction::Outgoing)
                 .find(|x| {
-                    rail_binding.to_end.is_some_and(|y| x.id() == y)
-                        || rail_binding.to_start.is_some_and(|y| x.id() == y)
+                    if rail_binding.to_end.is_some_and(|y| x.id() == y) {
+                        let node = self
+                            .graph
+                            .edge_endpoints(rail_binding.to_end.unwrap())
+                            .unwrap()
+                            .1;
+                        end_intersection_id = self.graph.node_weight(node).unwrap().intersection_id;
+                        true
+                    } else if rail_binding.to_start.is_some_and(|y| x.id() == y) {
+                        let node = self
+                            .graph
+                            .edge_endpoints(rail_binding.to_start.unwrap())
+                            .unwrap()
+                            .1;
+                        end_intersection_id = self.graph.node_weight(node).unwrap().intersection_id;
+                        true
+                    } else {
+                        false
+                    }
                 })
                 .is_some()
         };
@@ -160,11 +229,68 @@ impl RailGraph {
             },
         );
 
-        path.map(|x| {
-            x.1.iter()
-                .map(|x| self.graph.node_weight(*x).unwrap().intersection_id)
-                .collect()
-        })
+        if let Some(path) = path {
+            let mut traversal = vec![];
+            traversal.push(
+                intersections
+                    .intersections
+                    .get(&rail.joints[if travel_right { 0 } else { 1 }].intersection_id)
+                    .unwrap(),
+            );
+            traversal.append(
+                &mut path
+                    .1
+                    .into_iter()
+                    .map(|x| {
+                        intersections
+                            .intersections
+                            .get(&self.graph.node_weight(x).unwrap().intersection_id)
+                            .unwrap()
+                    })
+                    .collect(),
+            );
+            traversal.push(
+                intersections
+                    .intersections
+                    .get(&end_intersection_id)
+                    .unwrap(),
+            );
+
+            Some(RailGraphTraverseResult {
+                cost: path.0,
+                traversal: traversal
+                    .iter()
+                    .zip(traversal.iter().skip(1))
+                    .map(|(x, y)| {
+                        let mut rail_at_start = false;
+                        let rail = *x
+                            .curves()
+                            .iter()
+                            .find(|x| {
+                                let (rail, _) = rails.get(**x).unwrap();
+                                if rail.joints[0].intersection_id == y.uuid {
+                                    rail_at_start = false;
+                                    true
+                                } else if rail.joints[1].intersection_id == y.uuid {
+                                    rail_at_start = true;
+                                    true
+                                } else {
+                                    false
+                                }
+                            })
+                            .unwrap();
+                        RailGraphTraversal {
+                            from: *x.to_owned(),
+                            to: *y.to_owned(),
+                            rail,
+                            rail_at_start,
+                        }
+                    })
+                    .collect(),
+            })
+        } else {
+            None
+        }
     }
 }
 
@@ -198,6 +324,7 @@ fn on_rail_intersection_changed(
                 };
 
                 let edge = RailGraphEdge {
+                    entity: *x,
                     length: spline.curve_length(),
                     forward: approach_dir,
                 };

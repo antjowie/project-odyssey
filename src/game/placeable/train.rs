@@ -254,7 +254,7 @@ fn handle_train_placement(
 
 fn calculate_path(
     q: Query<(&Transform, &Train), With<Selected>>,
-    rails: Query<(&Rail, &Spline), Without<PlaceablePreview>>,
+    mut rails: Query<(&Rail, &Spline), Without<PlaceablePreview>>,
     graph: Res<RailGraph>,
     cursor: Single<&PlayerCursor>,
     mut ray_cast: MeshRayCast,
@@ -265,14 +265,20 @@ fn calculate_path(
         return;
     }
 
-    let end = ray_cast.cast_ray(cursor.ray, &RayCastSettings::default().always_early_exit());
+    let end = ray_cast.cast_ray(
+        cursor.ray,
+        &RayCastSettings::default()
+            .always_early_exit()
+            .with_filter(&|x| rails.contains(x)),
+    );
     if end.is_empty() || rails.contains(end[0].0) == false {
         return;
     }
 
     for (t, train) in q.iter() {
         let (start, spline) = rails.get(train.rail).unwrap();
-        let start = match start.traverse(train.t, &t.forward(), spline.curve_length(), &spline) {
+        let next = match start.traverse(train.t, &t.forward(), spline.curve_length() * 2.0, &spline)
+        {
             TraverseResult::Intersection {
                 t: _,
                 pos: _,
@@ -281,36 +287,78 @@ fn calculate_path(
                 intersection_id,
             } => (intersection_id, forward),
             _ => {
-                continue;
+                panic!("How can we not hit an intersection if we traverse the entire rail?");
             }
         };
 
         let path = graph.get_path(
-            intersections.intersections.get(&start.0).unwrap(),
-            &start.1,
+            train.t,
+            train.rail,
+            &t.forward(),
+            intersections.intersections.get(&next.0).unwrap(),
+            &next.1,
             end[0].0,
             &end[0].1.point,
+            &intersections,
+            &rails.transmute_lens::<(&Rail, &Spline)>().query(),
         );
 
         if let Some(path) = path {
             let mut points = vec![t.translation];
+            let len = path.traversal.len();
             points.append(
                 &mut path
-                    .iter()
-                    .map(|x| {
-                        intersections
-                            .intersections
-                            .get(x)
-                            .unwrap()
-                            .collision
-                            .center
-                            .into()
+                    .traversal
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, x)| {
+                        let (_rail, spline) = rails.get(x.rail).unwrap();
+                        let mut points = spline.curve_points().to_owned();
+
+                        if !x.rail_at_start {
+                            points.reverse();
+                        }
+
+                        if i == 0 {
+                            let t = spline.t_from_pos(&t.translation);
+                            if x.rail_at_start {
+                                points = points
+                                    .into_iter()
+                                    .filter(|x| spline.t_from_pos(x) > t)
+                                    .collect();
+                            } else {
+                                points = points
+                                    .into_iter()
+                                    .filter(|x| spline.t_from_pos(x) < t)
+                                    .collect();
+                            }
+                        }
+                        if i == len - 1 {
+                            let t = spline.t_from_pos(&end[0].1.point);
+                            if x.rail_at_start {
+                                points = points
+                                    .into_iter()
+                                    .filter(|x| spline.t_from_pos(x) < t)
+                                    .collect();
+                            } else {
+                                points = points
+                                    .into_iter()
+                                    .filter(|x| spline.t_from_pos(x) > t)
+                                    .collect();
+                            }
+                        }
+
+                        points
                     })
-                    .collect::<Vec<Vec3>>(),
+                    .flatten()
+                    .collect(),
             );
+
             points.push(end[0].1.point);
 
-            gizmos.linestrip(points, Color::WHITE);
+            points.iter().zip(points.iter().skip(1)).for_each(|(x, y)| {
+                gizmos.arrow(*x, *y, Color::WHITE).with_tip_length(0.5);
+            });
         }
     }
 }
