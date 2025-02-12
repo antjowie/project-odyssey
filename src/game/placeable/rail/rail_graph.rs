@@ -100,6 +100,13 @@ impl RailGraphTraverseResult {
         result
     }
 
+    pub fn validate(&self, rails: &Query<(), With<Rail>>) -> bool {
+        self.traversal
+            .iter()
+            .any(|x| rails.contains(x.rail) == false)
+            == false
+    }
+
     pub fn points(
         &self,
         start_pos: &Vec3,
@@ -117,13 +124,13 @@ impl RailGraphTraverseResult {
                 .enumerate()
                 .map(|(i, x)| {
                     let (_rail, spline) = rails.get(x.rail).unwrap();
-                    let mut points = spline.curve_points().to_owned();
+                    let mut points = spline.curve_points_projected().to_owned();
 
                     if !x.rail_at_start {
                         points.reverse();
                     }
 
-                    if x.rail == current_rail {
+                    if x.rail == current_rail && found_first_rail == false {
                         found_first_rail = true;
                         let t = spline.t_from_pos(&start_pos);
                         if x.rail_at_start {
@@ -158,11 +165,7 @@ impl RailGraphTraverseResult {
                                 .collect();
                         }
                     }
-
                     points
-                        .into_iter()
-                        .map(|x| x + Vec3::Y * spline.height)
-                        .collect()
                 })
                 .flatten()
                 .collect(),

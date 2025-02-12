@@ -66,6 +66,18 @@ For some different options you can check [run.bat](run.bat) which I use when dev
     * Run `rustup target add wasm32-unknown-unknown`
   * Now anytime you want you can run `run.bat web`
 
+### WASM build failure
+If you get wasm errors, you might need to reinstall the runner. Try the following:
+```
+cargo install -f wasm-server-runner
+cargo update -f wasm-bindgen --precise 0.2.xxx
+```
+Be sure to put in your own version number
+
+cargo update -p wasm-bindgen --precise 0.2.100
+cargo install -f wasm-server-runner
+
+
 ### Attaching debugger
 I use VSCode and MSVC for development. If you want to attach a debugger you can F5.
 1. Install [CodeLLDB](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb) extension

@@ -1,8 +1,6 @@
 use super::*;
 use bevy::{
-    math::bounding::{BoundingSphere, IntersectsVolume},
-    picking::{focus::PickingInteraction, mesh_picking::ray_cast::RayMeshHit},
-    utils::{hashbrown::HashSet, HashMap},
+    input::common_conditions::input_toggle_active, math::bounding::{BoundingSphere, IntersectsVolume}, picking::{focus::PickingInteraction, mesh_picking::ray_cast::RayMeshHit}, utils::{hashbrown::HashSet, HashMap}
 };
 use bevy_egui::{egui, EguiContexts};
 use bounding::BoundingVolume;
@@ -587,7 +585,7 @@ fn debug_rail_path(
 ) {
     q.into_iter().for_each(|(spline, picking)| {
         // Draw line
-        gizmos.linestrip(spline.curve_points().clone(), Color::WHITE);
+        gizmos.linestrip(spline.curve_points_projected().clone(), Color::WHITE);
 
         // Draw forwards
         gizmos.line(
@@ -615,7 +613,7 @@ fn debug_rail_intersections(
     cursor: Single<&PlayerCursor>,
     mut gizmos: Gizmos,
     q: Query<&Spline, With<Rail>>,
-    mut contexts: EguiContexts,
+    // mut contexts: EguiContexts,
 ) {
     let cursor_sphere = BoundingSphere::new(cursor.build_pos, 0.1);
 
@@ -671,9 +669,9 @@ fn debug_rail_intersections(
 
     // Print hovered intersection info
     if let Some(collision) = collision {
-        egui::Window::new("intersection").show(contexts.ctx_mut(), |ui| {
-            ui.label(format!("{:#?}", collision.1));
-        });
+        // egui::Window::new("intersection").show(contexts.ctx_mut(), |ui| {
+        //     ui.label(format!("{:#?}", collision.1));
+        // });
 
         // Draw connected rails
         collision.1.left.iter().for_each(|e| {

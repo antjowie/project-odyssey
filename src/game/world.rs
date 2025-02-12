@@ -13,9 +13,9 @@ fn spawn_test_world(
     mut config_store: ResMut<GizmoConfigStore>,
 ) {
     // Draw gizmos over everything
-    for (_, config, _) in config_store.iter_mut() {
-        config.depth_bias = -1.;
-    }
+    // for (_, config, _) in config_store.iter_mut() {
+    //     config.depth_bias = -1.;
+    // }
     // --- Gameplay
     // Player State
     c.spawn((Name::new("PlayerState"), PlayerState::default()));

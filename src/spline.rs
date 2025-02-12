@@ -31,6 +31,8 @@ pub struct Spline {
     curve: CubicCurve<Vec3>,
     /// Uniformly spaced points in the curve, length is controlled by min segment length and max segments
     curve_points: Vec<Vec3>,
+    /// Uniformly spaced points + height offset
+    curve_points_projected: Vec<Vec3>,
     /// https://pomax.github.io/bezierinfo/#tracing
     lut: [SplineLUT; LUT_SAMPLES],
     curve_length: f32,
@@ -56,6 +58,7 @@ impl Default for Spline {
                 .to_curve()
                 .unwrap(),
             curve_points: vec![],
+            curve_points_projected: vec![],
             lut: [SplineLUT::default(); LUT_SAMPLES],
             curve_length: 0.0,
             height: 1.0,
@@ -81,6 +84,10 @@ impl Spline {
     /// Uniformly spaced points in the curve, length is controlled by min segment length and max segments
     pub fn curve_points(&self) -> &Vec<Vec3> {
         &self.curve_points
+    }
+
+    pub fn curve_points_projected(&self) -> &Vec<Vec3> {
+        &self.curve_points_projected
     }
 
     pub fn curve_length(&self) -> f32 {
@@ -126,14 +133,22 @@ impl Spline {
         // Populate curve points
         let segments = ((self.curve_length / self.min_segment_length).round() as usize).max(2);
         self.curve_points.clear();
+        self.curve_points_projected.clear();
         self.curve_points.reserve(segments);
+        self.curve_points_projected.reserve(segments);
         self.curve_points.push(self.lut[0].pos);
+        self.curve_points_projected
+            .push(self.lut[0].pos + Vec3::Y * self.height);
         let segment_length = self.curve_length / segments as f32;
         for i in 0..segments {
-            self.curve_points
-                .push(self.position(self.t_from_distance(i as f32 * segment_length)));
+            let pos = self.position(self.t_from_distance(i as f32 * segment_length));
+            self.curve_points.push(pos);
+            self.curve_points_projected
+                .push(pos + Vec3::Y * self.height);
         }
         self.curve_points.push(self.lut[LUT_SAMPLES - 1].pos);
+        self.curve_points_projected
+            .push(self.lut[LUT_SAMPLES - 1].pos + Vec3::Y * self.height);
     }
 
     pub fn create_curve_control_points(&self) -> [[Vec3; 4]; 1] {

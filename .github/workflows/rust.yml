@@ -49,7 +49,7 @@ jobs: # here we are specifing all of the jobs
       - name: Push
         uses: s0/git-publish-subdir-action@develop
         env:
-          SQUASH_HISTORY: true
+          SQUASH_HISTORY: false
           REPO: self
           BRANCH: gh-pages # The branch name where you want to push the assets
           FOLDER: out # The directory where your assets are generated

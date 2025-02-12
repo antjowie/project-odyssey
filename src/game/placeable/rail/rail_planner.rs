@@ -597,7 +597,7 @@ fn draw_rail_planner(mut gizmos: Gizmos, q: Query<(&RailPlanner, &Spline)>) {
         } else {
             Color::srgb(1.0, 0.1, 0.1)
         };
-        gizmos.linestrip(spline.curve_points().clone(), color);
+        gizmos.linestrip(spline.curve_points_projected().clone(), color);
         // info!(
         //     "points {:?}\n
         //     pos {:?}",

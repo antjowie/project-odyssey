@@ -7,7 +7,7 @@ pub(super) fn player_plugin(app: &mut App) {
     app.add_event::<PlayerStateChangedEvent>();
     app.add_systems(
         PreUpdate,
-        update_cursor.in_set(InputManagerSystem::ManualControl),
+        update_cursor.in_set(InputManagerSystem::ManualControl).run_if(any_with_component::<PrimaryWindow>),
     );
     app.add_systems(
         Update,

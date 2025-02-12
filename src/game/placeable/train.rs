@@ -1,7 +1,7 @@
 use super::{rail::rail_graph::*, *};
 use crate::spline::Spline;
-use avian3d::prelude::*;
 use rail::Rail;
+use uuid::Uuid;
 
 pub(super) fn train_plugin(app: &mut App) {
     app.add_systems(Startup, load_train_asset);
@@ -51,18 +51,13 @@ impl Train {
                 let options = intersection.curve_options(&forward);
                 if options.is_empty() {
                     // We'll remain here, stuck forever...
-                    // For now we'll just flip the train
-                    self.traverse(
-                        remaining_distance,
+                    TrainTraverseResult {
                         t,
-                        -forward,
-                        rail_id,
-                        rail,
-                        spline,
-                        rails,
-                        intersections,
-                        &plan,
-                    )
+                        pos,
+                        forward,
+                        rail: rail_id,
+                        status: TrainTraverseStatus::ReachedDestination,
+                    }
                 } else {
                     let decision = plan
                         .traversal
@@ -91,8 +86,37 @@ impl Train {
                 pos,
                 forward,
                 rail: rail_id,
-                reached_destination: pos.distance_squared(plan.end_position) < 0.1,
+                status: if pos.distance_squared(plan.end_position) < 0.1 {
+                    TrainTraverseStatus::ReachedDestination
+                } else {
+                    TrainTraverseStatus::InTransit
+                },
             },
+        }
+    }
+
+    pub fn next_intersection(
+        &self,
+        transform: &Transform,
+        rail: &Rail,
+        spline: &Spline,
+    ) -> (Uuid, Dir3) {
+        match rail.traverse(
+            self.t,
+            &transform.forward(),
+            spline.curve_length() * 2.0,
+            &spline,
+        ) {
+            TraverseResult::Intersection {
+                t: _,
+                pos: _,
+                forward,
+                remaining_distance: _,
+                intersection_id,
+            } => (intersection_id, forward),
+            _ => {
+                panic!("How can we not hit an intersection if we traverse the entire rail?");
+            }
         }
     }
 }
@@ -102,7 +126,14 @@ pub struct TrainTraverseResult {
     pub pos: Vec3,
     pub forward: Dir3,
     pub rail: Entity,
-    pub reached_destination: bool,
+    pub status: TrainTraverseStatus,
+}
+
+#[derive(PartialEq, Eq)]
+pub enum TrainTraverseStatus {
+    InTransit,
+    ReachedDestination,
+    Aborted,
 }
 
 #[derive(Resource)]
@@ -123,12 +154,41 @@ fn load_train_asset(mut c: Commands, asset_server: Res<AssetServer>) {
 fn move_trains_with_plan(
     mut q: Query<(&mut Transform, &mut Train)>,
     rails: Query<(&Rail, &Spline)>,
+    rails_filtered: Query<(), With<Rail>>,
     time: Res<Time>,
     intersections: Res<RailIntersections>,
     mut gizmos: Gizmos,
+    graph: Res<RailGraph>,
 ) {
     q.iter_mut().for_each(|(mut t, mut train)| {
         let (rail, spline) = rails.get(train.rail).unwrap();
+        // Validate plan
+        if let Some(plan) = &train.plan {
+            if plan.validate(&rails_filtered) == false {
+                let next = train.next_intersection(&t, rail, spline);
+                let to_rail = plan.traversal.last().unwrap().rail;
+                // In this scenario, we replaced or deleted our end rail, we don't have a
+                // way to resolve rail from pos and there could be overlapping
+                // rails at the destination so we just abort the plan
+                if rails.contains(to_rail) {
+                    train.plan = graph.get_path(
+                        train.t,
+                        train.rail,
+                        &t.forward(),
+                        &intersections.intersections.get(&next.0).unwrap(),
+                        &next.1,
+                        plan.traversal.last().unwrap().rail,
+                        &plan.end_position,
+                        &intersections,
+                        &rails,
+                    );
+                } else {
+                    train.plan = None;
+                }
+            }
+        }
+
+        // Execute plan
         if let Some(plan) = &train.plan {
             let distance = 10.0 * time.delta_secs();
             let remaining_distance = if train.rail == plan.traversal.last().unwrap().rail {
@@ -156,18 +216,19 @@ fn move_trains_with_plan(
             //     gizmos.sphere(Isometry3d::from_translation(pos.clone()), 0.3, GREEN_500);
             // }
 
-            let points = plan.points(&t.translation, &plan.end_position, train.rail, &rails);
-            points.iter().zip(points.iter().skip(1)).for_each(|(x, y)| {
-                gizmos
-                    .arrow(*x, *y, Color::srgb(0.5, 0.5, 0.5))
-                    .with_tip_length(0.5);
-            });
+            if result.status == TrainTraverseStatus::InTransit {
+                let points = plan.points(&t.translation, &plan.end_position, train.rail, &rails);
+                points.iter().zip(points.iter().skip(1)).for_each(|(x, y)| {
+                    gizmos
+                        .arrow(*x, *y, Color::srgb(0.5, 0.5, 0.5))
+                        .with_tip_length(0.5);
+                });
+            } else {
+                train.plan = None;
+            }
 
             train.rail = result.rail;
             train.t = result.t;
-            if result.reached_destination {
-                train.plan = None;
-            }
             t.translation = result.pos;
             let up = t.up();
             t.look_at(result.pos + result.forward.as_vec3(), up);
@@ -275,7 +336,7 @@ fn handle_train_placement(
 
 fn calculate_plan(
     mut q: Query<(&Transform, &mut Train), With<Selected>>,
-    rails: Query<(&Rail, &Spline)>,
+    mut rails: Query<(&Rail, &Spline)>,
     graph: Res<RailGraph>,
     player: Single<(&PlayerCursor, &ActionState<PlayerViewAction>)>,
     mut ray_cast: MeshRayCast,
@@ -288,32 +349,22 @@ fn calculate_plan(
     }
 
     let (cursor, input) = player.into_inner();
-    let end = ray_cast.cast_ray(
-        cursor.ray,
-        &RayCastSettings::default()
-            .always_early_exit()
-            .with_filter(&|x| rails.contains(x)),
-    );
 
-    if end.is_empty() {
+    let end = get_closest_rail(
+        cursor.ray,
+        &mut ray_cast,
+        &rails
+            .transmute_lens_filtered::<&Spline, With<Rail>>()
+            .query(),
+    );
+    if end.is_none() {
         return;
     }
+    let end = end.unwrap();
 
     for (t, mut train) in q.iter_mut() {
         let (start, spline) = rails.get(train.rail).unwrap();
-        let next = match start.traverse(train.t, &t.forward(), spline.curve_length() * 2.0, &spline)
-        {
-            TraverseResult::Intersection {
-                t: _,
-                pos: _,
-                forward,
-                remaining_distance: _,
-                intersection_id,
-            } => (intersection_id, forward),
-            _ => {
-                panic!("How can we not hit an intersection if we traverse the entire rail?");
-            }
-        };
+        let next = train.next_intersection(&t, start, spline);
 
         let plan = graph.get_path(
             train.t,
@@ -321,8 +372,8 @@ fn calculate_plan(
             &t.forward(),
             intersections.intersections.get(&next.0).unwrap(),
             &next.1,
-            end[0].0,
-            &end[0].1.point,
+            end.0,
+            &end.1.point,
             &intersections,
             &rails,
         );
