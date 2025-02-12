@@ -437,8 +437,7 @@ pub struct RailIntersection {
 
 impl RailIntersection {
     pub fn new(uuid: Uuid, pos: Vec3, right_forward: Dir3) -> Self {
-        // 0.25 padding to prevent hovering over a rail edge, causing a crash
-        const SIZE: f32 = RAIL_WIDTH * 0.5 + 0.25;
+        const SIZE: f32 = RAIL_WIDTH * 0.75;
 
         RailIntersection {
             uuid,

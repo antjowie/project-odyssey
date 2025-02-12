@@ -396,11 +396,13 @@ impl Spline {
         start_spline.set_controls([
             SplineControl {
                 pos: start[0],
-                forward: Dir3::new(start[1] - start[0]).unwrap(),
+                forward: Dir3::new(start[1] - start[0])
+                    .unwrap_or_else(|_| Dir3::new_unchecked(Vec3::NEG_Z)),
             },
             SplineControl {
                 pos: start[3],
-                forward: Dir3::new(start[2] - start[3]).unwrap(),
+                forward: Dir3::new(start[2] - start[3])
+                    .unwrap_or_else(|_| Dir3::new_unchecked(Vec3::NEG_Z)),
             },
         ]);
 
@@ -409,11 +411,13 @@ impl Spline {
         end_spline.set_controls([
             SplineControl {
                 pos: end[0],
-                forward: Dir3::new(end[1] - end[0]).unwrap(),
+                forward: Dir3::new(end[1] - end[0])
+                    .unwrap_or_else(|_| Dir3::new_unchecked(Vec3::NEG_Z)),
             },
             SplineControl {
                 pos: end[3],
-                forward: Dir3::new(end[2] - end[3]).unwrap(),
+                forward: Dir3::new(end[2] - end[3])
+                    .unwrap_or_else(|_| Dir3::new_unchecked(Vec3::NEG_Z)),
             },
         ]);
 

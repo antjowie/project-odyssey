@@ -42,18 +42,6 @@ fn spawn_test_world(
     // c.insert_resource(DirectionalLightShadowMap { size: 8192 });
     // c.insert_resource(DirectionalLightShadowMap { size: 8192 + 4096 });
 
-    let cascade_shadow_config = CascadeShadowConfigBuilder {
-        // num_cascades: 4,
-        // minimum_distance: 0.1,
-        // maximum_distance: 1000.0,
-        // overlap_proportion: 0.5,
-        minimum_distance: 2.5,
-        first_cascade_far_bound: PanOrbitCameraSettings::default().max_radius * 0.1,
-        maximum_distance: PanOrbitCameraSettings::default().max_radius * 1.2,
-        ..default()
-    }
-    .build();
-
     c.spawn((
         Name::new("DirectionalLight"),
         DirectionalLight {
@@ -62,7 +50,6 @@ fn spawn_test_world(
             ..default()
         },
         Transform::from_xyz(0.0, 0.0, 0.0).looking_at(Vec3::new(-0.15, -0.05, 0.25), Vec3::Y),
-        cascade_shadow_config,
     ));
 
     c.spawn((

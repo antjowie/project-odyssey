@@ -1,5 +1,5 @@
 use crate::{game::*, input::*};
-use bevy::{math::vec3, prelude::*};
+use bevy::{math::vec3, pbr::CascadeShadowConfigBuilder, prelude::*};
 use player::PlayerCursor;
 
 pub struct CameraPlugin;
@@ -9,7 +9,10 @@ impl Plugin for CameraPlugin {
         app.add_systems(
             Update,
             // Grab Cursor will likely need a software cursor, cuz the harware impl seems to not have a lot of parity
-            (update_pan_orbit_camera).run_if(any_with_component::<PanOrbitCamera>),
+            (
+                (update_pan_orbit_camera).run_if(any_with_component::<PanOrbitCamera>),
+                update_shadow_map,
+            ),
         );
         app.add_plugins(InputContextPlugin::<CameraAction>::default());
         app.register_type::<PanOrbitCamera>();
@@ -206,4 +209,28 @@ fn update_pan_orbit_camera(
             t.translation = state.center + offset;
             t.rotation = rotation;
         });
+}
+
+fn update_shadow_map(
+    mut c: Commands,
+    q: Query<Entity, With<DirectionalLight>>,
+    cameras: Query<&PanOrbitCamera, Changed<PanOrbitCamera>>,
+) {
+    cameras.iter().for_each(|camera| {
+        q.iter().for_each(|e| {
+            c.entity(e).insert(
+                CascadeShadowConfigBuilder {
+                    // num_cascades: 4,
+                    // minimum_distance: 0.1,
+                    // maximum_distance: 1000.0,
+                    // overlap_proportion: 0.5,
+                    minimum_distance: camera.radius * 0.2,
+                    first_cascade_far_bound: camera.radius * 1.2,
+                    maximum_distance: camera.radius * 10.0,
+                    ..default()
+                }
+                .build(),
+            );
+        });
+    });
 }
