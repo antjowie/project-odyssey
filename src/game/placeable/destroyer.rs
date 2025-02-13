@@ -23,7 +23,7 @@ pub struct DestroyEvent;
 
 /// Holds a handle to the original material
 #[derive(Component)]
-struct ConsiderForDestruction(Handle<StandardMaterial>);
+struct ConsiderForDestruction(Option<Handle<StandardMaterial>>);
 
 fn load_destroyer_asset(mut c: Commands, mut materials: ResMut<Assets<StandardMaterial>>) {
     c.insert_resource(DestroyerAsset {
@@ -31,61 +31,89 @@ fn load_destroyer_asset(mut c: Commands, mut materials: ResMut<Assets<StandardMa
     });
 }
 
-pub fn on_destroy_default(trigger: Trigger<DestroyEvent>, mut c: Commands) {
-    c.entity(trigger.entity()).despawn();
+pub fn on_destroy_default(
+    trigger: Trigger<DestroyEvent>,
+    mut c: Commands,
+    children: Query<&Children>,
+) {
+    let e = trigger.entity();
+    let mut destroy = |e| {
+        info!("Destoy {:?}", e);
+        c.entity(e).despawn();
+    };
+    children.iter_descendants(e).for_each(&mut destroy);
+    destroy(e);
 }
 
 fn handle_destroyer(
     mut c: Commands,
-    mut q: ParamSet<(
-        // Query for all placeable entities
-        Query<
-            (Entity, &mut MeshMaterial3d<StandardMaterial>),
-            (With<Placeable>, Without<PlaceablePreview>),
-        >,
-        // Query for all entities considered for destructions
-        Query<(
-            Entity,
-            &ConsiderForDestruction,
-            &mut MeshMaterial3d<StandardMaterial>,
-        )>,
-    )>,
+    mut to_destroy: Query<(Entity, &ConsiderForDestruction)>,
+    destroyables: Query<Entity, (With<Placeable>, Without<PlaceablePreview>)>,
     player: Single<(&PlayerCursor, &ActionState<PlayerBuildAction>)>,
     mut ray_cast: MeshRayCast,
-    ray_cast_filter: Query<(), (With<Placeable>, Without<PlaceablePreview>)>,
     asset: Res<DestroyerAsset>,
+    mut materials: Query<&mut MeshMaterial3d<StandardMaterial>>,
+    children: Query<&Children>,
+    parents: Query<&Parent>,
 ) {
     let (cursor, input) = player.into_inner();
 
     let hits = ray_cast.cast_ray(
         cursor.ray,
         &RayCastSettings::default()
-            .always_early_exit()
-            .with_filter(&|e| ray_cast_filter.contains(e)),
+            .with_visibility(RayCastVisibility::Any)
+            .always_early_exit(),
     );
-
+    let mut hovered = None;
     if hits.len() > 0 {
-        if q.p1().contains(hits[0].0) == false {
-            if let Ok((e, mut mat)) = q.p0().get_mut(hits[0].0) {
-                let destroyer = ConsiderForDestruction(mat.0.clone());
-                mat.0 = asset.material.clone();
-                c.entity(e).insert(destroyer);
-            }
+        if destroyables.contains(hits[0].0) {
+            hovered = Some(hits[0].0);
+        } else {
+            hovered = parents
+                .iter_ancestors(hits[0].0)
+                .find(|x| destroyables.contains(*x));
+        }
+    }
+
+    if let Some(hovered) = hovered {
+        // If the hovered entity is not yet updated
+        if to_destroy.contains(hovered) == false {
+            let mut handle = |e| {
+                let handle = materials.get_mut(e).ok();
+                c.entity(e).insert(if let Some(mut handle) = handle {
+                    let destroyer = ConsiderForDestruction(Some(handle.0.clone()));
+                    handle.0 = asset.material.clone();
+                    destroyer
+                } else {
+                    ConsiderForDestruction(None)
+                });
+            };
+
+            handle(hovered);
+            children.iter_descendants(hovered).for_each(handle);
         }
     }
 
     if input.just_pressed(&PlayerBuildAction::Interact) {
         c.trigger_targets(
             DestroyEvent,
-            q.p1().iter().map(|(e, _, _)| e).collect::<Vec<Entity>>(),
+            to_destroy.iter().map(|(e, _)| e).collect::<Vec<Entity>>(),
         );
     }
 
-    for (e, orig, mut mat) in q.p1().iter_mut() {
-        if hits.len() > 0 && hits[0].0 == e {
-            continue;
+    // For all unhovered entities, undo their destruction
+    for (destroy, orig_mat) in to_destroy.iter_mut() {
+        if let Some(hovered) = hovered {
+            if hovered == destroy || parents.iter_ancestors(destroy).any(|x| x == hovered) {
+                continue;
+            }
         }
-        mat.0 = orig.0.clone();
-        c.entity(e).remove::<ConsiderForDestruction>();
+
+        if let Some(orig_mat) = &orig_mat.0 {
+            if let Ok(mut mat) = materials.get_mut(destroy) {
+                mat.0 = orig_mat.clone();
+            }
+        }
+        c.entity(destroy).remove::<ConsiderForDestruction>();
     }
 }

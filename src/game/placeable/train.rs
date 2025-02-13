@@ -147,7 +147,7 @@ fn load_train_asset(mut c: Commands, asset_server: Res<AssetServer>) {
 
     c.insert_resource(TrainAsset {
         scene,
-        scale: Vec3::splat(4.0),
+        scale: Vec3::splat(RAIL_SEGMENT_WIDTH),
     });
 }
 

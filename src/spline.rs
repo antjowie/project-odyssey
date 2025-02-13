@@ -28,6 +28,7 @@ pub struct Spline {
     controls_override: Option<[Vec3; 2]>,
     /// Segments define how many curve_points to generate
     pub min_segment_length: f32,
+    pub height: f32,
     curve: CubicCurve<Vec3>,
     /// Uniformly spaced points in the curve, length is controlled by min segment length and max segments
     curve_points: Vec<Vec3>,
@@ -36,7 +37,6 @@ pub struct Spline {
     /// https://pomax.github.io/bezierinfo/#tracing
     lut: [SplineLUT; LUT_SAMPLES],
     curve_length: f32,
-    pub height: f32,
 }
 
 #[derive(Default, Reflect, Clone, Copy, PartialEq)]
@@ -140,7 +140,7 @@ impl Spline {
         self.curve_points_projected
             .push(self.lut[0].pos + Vec3::Y * self.height);
         let segment_length = self.curve_length / segments as f32;
-        for i in 0..segments {
+        for i in 1..segments {
             let pos = self.position(self.t_from_distance(i as f32 * segment_length));
             self.curve_points.push(pos);
             self.curve_points_projected
@@ -472,6 +472,107 @@ impl SplineMesh {
         self.width = width;
         self
     }
+
+    pub fn create_mesh() -> Mesh {
+        Mesh::new(
+            bevy::render::mesh::PrimitiveTopology::TriangleList,
+            RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+        )
+    }
+
+    /// Returns (vertices, normal, indices)
+    pub fn create_buffers(
+        spline: &Spline,
+        width: f32,
+        height: f32,
+        offset: Vec2,
+    ) -> (Vec<Vec3>, Vec<Vec3>, Indices) {
+        let mut points = spline.curve_points().clone();
+        // Insert one element after last, imagine we have 3 samples
+        // 1. 0->1 == Insert vertices
+        // 2. 1->2 == Insert vertices
+        // 3. 2->None == No insertion
+        // To generate the mesh, we want to also insert an element at the end which is just an extension
+        points.push(spline.controls()[1].pos - spline.controls()[1].forward.as_vec3());
+
+        let mut vertices = Vec::new();
+        let mut normal = Vec::new();
+        vertices.reserve(points.len() * 2);
+        normal.reserve(points.len() * 2);
+
+        points
+            .iter()
+            .zip(points.iter().skip(1))
+            .for_each(|(sample, next)| {
+                let forward = (next - sample).normalize();
+                let side = forward.cross(Vec3::Y);
+
+                let sample = sample + side * offset.x + Vec3::Y * offset.y;
+
+                let left = sample - side * width * 0.5;
+                let right = sample + side * width * 0.5;
+
+                // Up down left right
+                vertices.push(left + Vec3::Y * height);
+                vertices.push(right + Vec3::Y * height);
+                vertices.push(left);
+                vertices.push(right);
+                vertices.push(left + Vec3::Y * height);
+                vertices.push(left);
+                vertices.push(right + Vec3::Y * height);
+                vertices.push(right);
+                let up = side.cross(forward);
+                normal.push(up);
+                normal.push(up);
+                normal.push(-up);
+                normal.push(-up);
+                normal.push(-side);
+                normal.push(-side);
+                normal.push(side);
+                normal.push(side);
+            });
+
+        let segments = vertices.len() / 8 - 1;
+
+        let mut indices = Vec::<u32>::new();
+        indices.reserve(segments * 24);
+
+        for i in 0..segments {
+            let offset = (i * 8) as u32;
+            indices.extend_from_slice(&mut [
+                // Up
+                offset + 0,
+                offset + 1,
+                offset + 8,
+                offset + 1,
+                offset + 9,
+                offset + 8,
+                // Down
+                offset + 2,
+                offset + 10,
+                offset + 3,
+                offset + 3,
+                offset + 10,
+                offset + 11,
+                // Left
+                offset + 5,
+                offset + 4,
+                offset + 12,
+                offset + 5,
+                offset + 12,
+                offset + 13,
+                // Right
+                offset + 7,
+                offset + 14,
+                offset + 6,
+                offset + 7,
+                offset + 15,
+                offset + 14,
+            ]);
+        }
+
+        (vertices, normal, Indices::U32(indices))
+    }
 }
 
 impl Default for SplineMesh {
@@ -504,7 +605,6 @@ fn update_spline_mesh(
     mut c: Commands,
     mut q: Query<(Entity, &mut Mesh3d, &Spline, &mut SplineMesh), Changed<Spline>>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut gizmos: Gizmos,
 ) {
     for (entity, mut mesh, spline, mut spline_mesh) in &mut q {
         if spline.controls()[0].pos == spline.controls()[1].pos
@@ -518,133 +618,21 @@ fn update_spline_mesh(
         let mesh = match meshes.get_mut(mesh.id()) {
             Some(mesh) => mesh,
             None => {
-                mesh.0 = meshes.add(create_spline_mesh());
+                mesh.0 = meshes.add(SplineMesh::create_mesh());
                 meshes.get_mut(mesh.id()).unwrap()
             }
         };
 
-        let mut points = spline.curve_points().clone();
-        // Insert one element after last, imagine we have 3 samples
-        // 1. 0->1 == Insert vertices
-        // 2. 1->2 == Insert vertices
-        // 3. 2->None == No insertion
-        // To generate the mesh, we want to also insert an element at the end which is just an extension
-        points.push(spline.controls()[1].pos - spline.controls()[1].forward.as_vec3());
+        let buffers =
+            SplineMesh::create_buffers(spline, spline_mesh.width, spline.height, Vec2::splat(0.0));
 
-        let mut vertices = Vec::new();
-        let mut normal = Vec::new();
-        vertices.reserve(points.len() * 2);
-        normal.reserve(points.len() * 2);
-        let width = spline_mesh.width * 0.5;
-        let height = spline.height;
-
-        points
-            .iter()
-            .zip(points.iter().skip(1))
-            .for_each(|(sample, next)| {
-                let forward = (next - sample).normalize();
-                let side = forward.cross(Vec3::Y);
-
-                let left = sample - side * width;
-                let right = sample + side * width;
-
-                // Up down left right
-                vertices.push(left + Vec3::Y * height);
-                vertices.push(right + Vec3::Y * height);
-                vertices.push(left);
-                vertices.push(right);
-                vertices.push(left + Vec3::Y * height);
-                vertices.push(left);
-                vertices.push(right + Vec3::Y * height);
-                vertices.push(right);
-                let up = side.cross(forward);
-                normal.push(up);
-                normal.push(up);
-                normal.push(-up);
-                normal.push(-up);
-                normal.push(-side);
-                normal.push(-side);
-                normal.push(side);
-                normal.push(side);
-
-                gizmos.arrow(*sample, sample + forward, Color::srgb(1., 0., 0.));
-                gizmos.line(*sample, left, Color::srgb(0., 1., 0.));
-                gizmos.line(*sample, right, Color::srgb(1., 0., 0.));
-                gizmos.line(*sample, sample + up, Color::srgb(0., 0., 1.));
-            });
-
-        let segments = vertices.len() / 8 - 1;
-        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
-        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normal);
-
-        let mut indices = Vec::<u32>::new();
-        indices.reserve(segments * 24);
-
-        for i in 0..segments {
-            let offset = (i * 8) as u32;
-            indices.append(
-                &mut [
-                    // Up
-                    offset + 0,
-                    offset + 1,
-                    offset + 8,
-                    offset + 1,
-                    offset + 9,
-                    offset + 8,
-                    // Down
-                    offset + 2,
-                    offset + 10,
-                    offset + 3,
-                    offset + 3,
-                    offset + 10,
-                    offset + 11,
-                    // Left
-                    offset + 5,
-                    offset + 4,
-                    offset + 12,
-                    offset + 5,
-                    offset + 12,
-                    offset + 13,
-                    // Right
-                    offset + 7,
-                    offset + 14,
-                    offset + 6,
-                    offset + 7,
-                    offset + 15,
-                    offset + 14,
-                    // offset + 0,
-                    // offset + 1,
-                    // offset + 2,
-                    // offset + 1,
-                    // offset + 3,
-                    // offset + 2,
-                ]
-                .to_vec(),
-            );
-        }
-
-        // info!("points {} indices {}", points.len(), indices.len());
-        // info!(
-        //     "points{}\nvertices{} {:?}\nindices{} {:?}",
-        //     points.len(),
-        //     vertices.len(),
-        //     vertices,
-        //     indices.len(),
-        //     indices
-        // );
-
-        mesh.insert_indices(Indices::U32(indices));
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, buffers.0);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, buffers.1);
+        mesh.insert_indices(buffers.2);
 
         // At this moment check if our entity still exists, otherwise we just drop it
         if let Some(mut ec) = c.get_entity(entity) {
-            ec.try_insert(mesh.compute_aabb().unwrap());
+            ec.try_insert((mesh.compute_aabb().unwrap(), Visibility::Hidden));
         }
     }
-}
-
-fn create_spline_mesh() -> Mesh {
-    Mesh::new(
-        bevy::render::mesh::PrimitiveTopology::TriangleList,
-        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
-    )
 }

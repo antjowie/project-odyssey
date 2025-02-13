@@ -8,6 +8,7 @@
 
 use std::f32::consts::PI;
 
+use avian3d::prelude::Collider;
 use bevy::{color::palettes::tailwind::*, picking::pointer::PointerInteraction};
 use bevy::{math::*, prelude::*, window::PrimaryWindow};
 
@@ -41,12 +42,31 @@ impl Plugin for GamePlugin {
         app.add_systems(
             Update,
             (
+                generate_collider_on_mesh_changed,
                 draw_mesh_intersections,
                 draw_build_grid.run_if(not(in_player_state(PlayerState::Viewing))),
             ),
         );
         app.register_type::<PlayerCursor>();
     }
+}
+
+#[derive(Component, Default)]
+pub struct GenerateCollider;
+
+fn generate_collider_on_mesh_changed(
+    mut c: Commands,
+    q: Query<(Entity, &Mesh3d), (Changed<Mesh3d>, With<GenerateCollider>)>,
+    meshes: Res<Assets<Mesh>>,
+) {
+    q.iter().for_each(|(e, mesh)| {
+        if let Some(mesh) = meshes.get(mesh) {
+            if let Some(collider) = Collider::trimesh_from_mesh(&mesh) {
+                // if let Some(collider) = Collider::convex_hull_from_mesh(&mesh) {
+                c.entity(e).insert(collider);
+            }
+        }
+    });
 }
 
 /// https://bevyengine.org/examples/picking/mesh-picking/

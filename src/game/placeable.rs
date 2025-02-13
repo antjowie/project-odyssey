@@ -1,6 +1,5 @@
 //! Any placeable are things that can be placed
 use super::*;
-use avian3d::prelude::Collider;
 use bevy::{ecs::traversal::Traversal, pbr::NotShadowCaster};
 
 use destroyer::*;
@@ -24,7 +23,6 @@ pub(super) fn placeable_plugin(app: &mut App) {
             cleanup_build_preview_on_state_change.run_if(on_event::<PlayerStateChangedEvent>),
             update_picked_placeable.run_if(in_player_state(PlayerState::Building)),
             on_placeable_preview_changed_event.run_if(on_event::<PlaceablePreviewChangedEvent>),
-            generate_collider_on_mesh_changed,
             (
                 on_placeable_preview_added,
                 update_placeable_preview_material,
@@ -164,21 +162,6 @@ fn cleanup_build_preview_on_state_change(
             }
         }
     }
-}
-
-fn generate_collider_on_mesh_changed(
-    mut c: Commands,
-    q: Query<(Entity, &Mesh3d), Changed<Mesh3d>>,
-    meshes: Res<Assets<Mesh>>,
-) {
-    q.iter().for_each(|(e, mesh)| {
-        if let Some(mesh) = meshes.get(mesh) {
-            if let Some(collider) = Collider::trimesh_from_mesh(&mesh) {
-                // if let Some(collider) = Collider::convex_hull_from_mesh(&mesh) {
-                c.entity(e).insert(collider);
-            }
-        }
-    });
 }
 
 fn on_placeable_preview_added(

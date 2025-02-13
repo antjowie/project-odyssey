@@ -21,10 +21,12 @@ pub fn rail_planner_plugin(app: &mut App) {
     );
 }
 
+
+
 #[derive(Component)]
 #[require(
-    Spline(|| Spline::default().with_min_segment_length(RAIL_MIN_LENGTH).with_height(RAIL_HEIGHT)), 
-    SplineMesh(|| SplineMesh::default().with_width(RAIL_WIDTH)), 
+    Spline(create_rail_spline), 
+    SplineMesh(|| SplineMesh::default().with_width(RAIL_SEGMENT_WIDTH)), 
     NotShadowCaster
 )]
 pub struct RailPlanner {
@@ -129,7 +131,7 @@ fn update_intitial_rail_planner(
     }
 
     let (state_e, cursor, input) = player_state.single();
-    let mut spline = Spline::default();
+    let mut spline = create_rail_spline();
     let mut plan = RailPlanner::new(cursor.build_pos, &mut spline);
     let mut pos = cursor.build_pos;
 

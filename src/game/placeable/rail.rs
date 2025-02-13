@@ -1,8 +1,8 @@
 use super::*;
+use avian3d::parry::query;
 use bevy::{
-    input::common_conditions::input_toggle_active, math::bounding::{BoundingSphere, IntersectsVolume}, picking::{focus::PickingInteraction, mesh_picking::ray_cast::RayMeshHit}, utils::{hashbrown::HashSet, HashMap}
+    math::bounding::{BoundingSphere, IntersectsVolume}, picking::{focus::PickingInteraction, mesh_picking::ray_cast::RayMeshHit}, utils::{hashbrown::HashSet, HashMap}
 };
-use bevy_egui::{egui, EguiContexts};
 use bounding::BoundingVolume;
 use cursor_feedback::CursorFeedback;
 use uuid::Uuid;
@@ -24,17 +24,19 @@ pub(super) fn rail_plugin(app: &mut App) {
     app.add_systems(Startup, load_rail_asset);
     app.add_systems(
         Update,
+(        on_rail_mesh_changed,
         (debug_rail_path, debug_rail_intersections).run_if(in_player_state(PlayerState::Building)),
-    );
+)    );
     app.init_resource::<RailIntersections>();
 }
 
-const RAIL_MIN_LENGTH: f32 = 10.;
-const RAIL_WIDTH: f32 = 4.0;
-const RAIL_HEIGHT: f32 = 0.5;
-const RAIL_MIN_DELTA_RADIANS: f32 = 15.0 * PI / 180.;
-const RAIL_MAX_RADIANS: f32 = 10. * PI / 180.;
-const RAIL_CURVES_MAX: usize = (PI / RAIL_MIN_DELTA_RADIANS) as usize;
+pub const RAIL_MIN_LENGTH: f32 = 10.;
+pub const RAIL_SEGMENT_LENGTH: f32 = 1.0;
+pub const RAIL_SEGMENT_WIDTH: f32 = 1.435;
+pub const RAIL_SEGMENT_HEIGHT: f32 = 0.20;
+pub const RAIL_MIN_DELTA_RADIANS: f32 = 15.0 * PI / 180.;
+pub const RAIL_MAX_RADIANS: f32 = 10. * PI / 180.;
+pub const RAIL_CURVES_MAX: usize = (PI / RAIL_MIN_DELTA_RADIANS) as usize;
 
 #[derive(Event, PartialEq, PartialOrd, Eq, Ord)]
 pub struct RailIntersectionChangedEvent(Uuid);
@@ -49,15 +51,22 @@ pub struct RailRemovedEvent(Entity);
 pub struct RailAsset {
     pub material: Handle<StandardMaterial>,
     pub hover_material: Handle<StandardMaterial>,
+    pub segment: Handle<Scene>,
+}
+
+fn create_rail_spline() -> Spline {
+    Spline::default().with_min_segment_length(RAIL_SEGMENT_LENGTH).with_height(RAIL_SEGMENT_HEIGHT)
 }
 
 /// Contains the details to build and connect a rail
 #[derive(Component)]
 #[require(
-    Spline(|| Spline::default().with_min_segment_length(RAIL_MIN_LENGTH).with_height(RAIL_HEIGHT)), 
-    SplineMesh(|| SplineMesh::default().with_width(RAIL_WIDTH)), 
+    Spline(create_rail_spline), 
+    SplineMesh(|| SplineMesh::default().with_width(RAIL_SEGMENT_WIDTH)), 
     Placeable(||Placeable::Rail), 
-    Name(|| Name::new("Rail")))]
+    GenerateCollider,
+    Name(|| Name::new("Rail"))
+)]
 pub struct Rail {
     pub joints: [RailJoint; 2],
 }
@@ -435,7 +444,7 @@ pub struct RailIntersection {
 
 impl RailIntersection {
     pub fn new(uuid: Uuid, pos: Vec3, right_forward: Dir3) -> Self {
-        const SIZE: f32 = RAIL_WIDTH * 0.75;
+        const SIZE: f32 = RAIL_SEGMENT_WIDTH * 0.75;
 
         RailIntersection {
             uuid,
@@ -513,9 +522,58 @@ impl RailIntersection {
     }
 }
 
+fn on_rail_mesh_changed(
+    mut c:Commands,
+    q: Query<(Entity, &SplineMesh, &Spline), (With<Rail>, Added<Mesh3d>)>,
+    asset: Res<RailAsset>,
+    children: Query<&Children>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    rail_asset: Res<RailAsset>
+)
+{
+    q.iter().for_each(|(e, mesh, spline)| {
+        children.iter_descendants(e).for_each(|x| c.entity(x).despawn());
+        
+        let mut ec = c.entity(e);
+        ec.clear_children();
+        ec.with_children(|parent| {
+            const SIZE: f32 = 0.12;
+            const Y_OFFSET: f32 = 0.08;
+            const DISTANCE: f32 = 0.5;
+            for i in [-DISTANCE, DISTANCE] {
+                let mut mesh = SplineMesh::create_mesh();
+                
+                let buffers =
+                SplineMesh::create_buffers(&spline, SIZE, SIZE, vec2(i, Y_OFFSET));
+                // SplineMesh::create_buffers(&spline, SIZE, SIZE + Y_OFFSET, vec2(i, 0.0));
+                
+                mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, buffers.0);
+                mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, buffers.1);
+                mesh.insert_indices(buffers.2);
+                    
+                parent.spawn((Mesh3d(meshes.add(mesh)), Visibility::Visible
+            
+                ,MeshMaterial3d(rail_asset.material.clone())
+            ));
+            }
+            
+            spline.curve_points().iter().for_each(|pos| {
+                let t = spline.t_from_pos(pos);
+                let forward = spline.forward(t);
+                parent.spawn((
+                    SceneRoot(asset.segment.clone()), 
+                    Transform::from_translation(*pos)
+                    .with_scale(Vec3::new(mesh.width, mesh.width, mesh.width))
+                    .with_rotation(Quat::from_rotation_arc(Vec3::NEG_Z, forward.as_vec3())),
+                    Visibility::Visible));
+        });
+    });
+    });
+}
+
 pub fn get_closest_rail(ray: Ray3d, ray_cast: &mut MeshRayCast, query: &Query<&Spline, With<Rail>>) -> Option<(Entity, RayMeshHit)>
 {
-    let hits = ray_cast.cast_ray(ray, &RayCastSettings::default().with_filter(&|x| query.contains(x)).never_early_exit()).to_owned();
+    let hits = ray_cast.cast_ray(ray, &RayCastSettings::default().with_visibility(RayCastVisibility::Any).with_filter(&|x| query.contains(x)).never_early_exit()).to_owned();
     if hits.is_empty() {
         return None;
     }
@@ -540,6 +598,7 @@ fn on_rail_destroy(
     mut feedback: ResMut<CursorFeedback>,
     mut ev_rail_removed: EventWriter<RailRemovedEvent>,
     mut ev_intersection_removed: EventWriter<RailIntersectionRemovedEvent>,
+    children: Query<&Children>
 ) {
     // Check if there are no trains on this rail
     let entity = trigger.entity();
@@ -554,6 +613,7 @@ fn on_rail_destroy(
         }
     }
 
+    children.iter_descendants(entity).for_each(|x| c.entity(x).despawn());
     q.get_mut(entity).unwrap().destroy(
         trigger.entity(),
         &mut c,
@@ -563,10 +623,10 @@ fn on_rail_destroy(
     );
 }
 
-fn load_rail_asset(mut c: Commands, mut materials: ResMut<Assets<StandardMaterial>>) {
+fn load_rail_asset(mut c: Commands, mut materials: ResMut<Assets<StandardMaterial>>, asset_server: Res<AssetServer>) {
     c.insert_resource(RailAsset {
         material: materials.add(StandardMaterial {
-            base_color: Color::srgb(0.3, 0.3, 0.3),
+            base_color: Color::srgb_u8(189, 197, 237),
             // Causes odd shadows issues
             // double_sided: true,
             cull_mode: None,
@@ -576,6 +636,7 @@ fn load_rail_asset(mut c: Commands, mut materials: ResMut<Assets<StandardMateria
             base_color: Color::srgb(0.1, 0.1, 0.5),
             ..default()
         }),
+        segment: asset_server.load(GltfAssetLabel::Scene(0).from_asset("models/spline_segment.glb"))
     });
 }
 
