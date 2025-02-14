@@ -375,7 +375,7 @@ impl Spline {
     /// Create left and right spline with pos as center
     pub fn split(&self, pos: &Vec3, gizmos: Option<&mut Gizmos>) -> (Spline, Spline) {
         let t = self.t_from_pos(&pos);
-        let pos = self.curve.sample(t).unwrap();
+        let pos = self.position(t);
         let control_points = self.create_curve_control_points();
         let s = control_points[0][0];
         let sc = control_points[0][1];

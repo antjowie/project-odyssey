@@ -74,10 +74,6 @@ cargo update -f wasm-bindgen --precise 0.2.xxx
 ```
 Be sure to put in your own version number
 
-cargo update -p wasm-bindgen --precise 0.2.100
-cargo install -f wasm-server-runner
-
-
 ### Attaching debugger
 I use VSCode and MSVC for development. If you want to attach a debugger you can F5.
 1. Install [CodeLLDB](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb) extension
