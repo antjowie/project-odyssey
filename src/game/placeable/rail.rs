@@ -1,7 +1,8 @@
 use super::*;
-use avian3d::parry::query;
 use bevy::{
-    math::bounding::{BoundingSphere, IntersectsVolume}, picking::{focus::PickingInteraction, mesh_picking::ray_cast::RayMeshHit}, utils::{hashbrown::HashSet, HashMap}
+    math::bounding::{BoundingSphere, IntersectsVolume},
+    picking::{focus::PickingInteraction, mesh_picking::ray_cast::RayMeshHit},
+    utils::{hashbrown::HashSet, HashMap},
 };
 use bounding::BoundingVolume;
 use cursor_feedback::CursorFeedback;
@@ -24,9 +25,12 @@ pub(super) fn rail_plugin(app: &mut App) {
     app.add_systems(Startup, load_rail_asset);
     app.add_systems(
         Update,
-(        on_rail_mesh_changed,
-        (debug_rail_path, debug_rail_intersections).run_if(in_player_state(PlayerState::Building)),
-)    );
+        (
+            on_rail_mesh_changed,
+            (debug_rail_path, debug_rail_intersections)
+                .run_if(in_player_state(PlayerState::Building)),
+        ),
+    );
     app.init_resource::<RailIntersections>();
 }
 
@@ -55,15 +59,17 @@ pub struct RailAsset {
 }
 
 fn create_rail_spline() -> Spline {
-    Spline::default().with_min_segment_length(RAIL_SEGMENT_LENGTH).with_height(RAIL_SEGMENT_HEIGHT)
+    Spline::default()
+        .with_min_segment_length(RAIL_SEGMENT_LENGTH)
+        .with_height(RAIL_SEGMENT_HEIGHT)
 }
 
 /// Contains the details to build and connect a rail
 #[derive(Component)]
 #[require(
-    Spline(create_rail_spline), 
-    SplineMesh(|| SplineMesh::default().with_width(RAIL_SEGMENT_WIDTH)), 
-    Placeable(||Placeable::Rail), 
+    Spline(create_rail_spline),
+    SplineMesh(|| SplineMesh::default().with_width(RAIL_SEGMENT_WIDTH)),
+    Placeable(||Placeable::Rail),
     GenerateCollider,
     Name(|| Name::new("Rail"))
 )]
@@ -412,11 +418,7 @@ impl RailIntersections {
             .find(|x| x.1.collision.intersects(sphere))
     }
 
-    pub fn create_new_intersection(
-        &mut self,
-        pos: Vec3,
-        right_forward: Dir3,
-    ) -> Uuid {
+    pub fn create_new_intersection(&mut self, pos: Vec3, right_forward: Dir3) -> Uuid {
         let uuid = Uuid::new_v4();
         let intersection = RailIntersection::new(uuid, pos, right_forward);
 
@@ -523,17 +525,18 @@ impl RailIntersection {
 }
 
 fn on_rail_mesh_changed(
-    mut c:Commands,
+    mut c: Commands,
     q: Query<(Entity, &SplineMesh, &Spline), (With<Rail>, Added<Mesh3d>)>,
     asset: Res<RailAsset>,
     children: Query<&Children>,
     mut meshes: ResMut<Assets<Mesh>>,
-    rail_asset: Res<RailAsset>
-)
-{
+    rail_asset: Res<RailAsset>,
+) {
     q.iter().for_each(|(e, mesh, spline)| {
-        children.iter_descendants(e).for_each(|x| c.entity(x).despawn());
-        
+        children
+            .iter_descendants(e)
+            .for_each(|x| c.entity(x).despawn());
+
         let mut ec = c.entity(e);
         ec.clear_children();
         ec.with_children(|parent| {
@@ -542,50 +545,69 @@ fn on_rail_mesh_changed(
             const DISTANCE: f32 = 0.5;
             for i in [-DISTANCE, DISTANCE] {
                 let mut mesh = SplineMesh::create_mesh();
-                
-                let buffers =
-                SplineMesh::create_buffers(&spline, SIZE, SIZE, vec2(i, Y_OFFSET));
+
+                let buffers = SplineMesh::create_buffers(&spline, SIZE, SIZE, vec2(i, Y_OFFSET));
                 // SplineMesh::create_buffers(&spline, SIZE, SIZE + Y_OFFSET, vec2(i, 0.0));
-                
+
                 mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, buffers.0);
                 mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, buffers.1);
                 mesh.insert_indices(buffers.2);
-                    
-                parent.spawn((Mesh3d(meshes.add(mesh)), Visibility::Visible
-            
-                ,MeshMaterial3d(rail_asset.material.clone())
-            ));
+
+                parent.spawn((
+                    Mesh3d(meshes.add(mesh)),
+                    Visibility::Visible,
+                    MeshMaterial3d(rail_asset.material.clone()),
+                ));
             }
-            
+
             spline.curve_points().iter().for_each(|pos| {
                 let t = spline.t_from_pos(pos);
                 let forward = spline.forward(t);
                 parent.spawn((
-                    SceneRoot(asset.segment.clone()), 
+                    SceneRoot(asset.segment.clone()),
                     Transform::from_translation(*pos)
-                    .with_scale(Vec3::new(mesh.width, mesh.width, mesh.width))
-                    .with_rotation(Quat::from_rotation_arc(Vec3::NEG_Z, forward.as_vec3())),
-                    Visibility::Visible));
+                        .with_scale(Vec3::new(mesh.width, mesh.width, mesh.width))
+                        .with_rotation(Quat::from_rotation_arc(Vec3::NEG_Z, forward.as_vec3())),
+                    Visibility::Visible,
+                ));
+            });
         });
-    });
     });
 }
 
-pub fn get_closest_rail(ray: Ray3d, ray_cast: &mut MeshRayCast, query: &Query<&Spline, With<Rail>>) -> Option<(Entity, RayMeshHit)>
-{
-    let hits = ray_cast.cast_ray(ray, &RayCastSettings::default().with_visibility(RayCastVisibility::Any).with_filter(&|x| query.contains(x)).never_early_exit()).to_owned();
+pub fn get_closest_rail(
+    ray: Ray3d,
+    ray_cast: &mut MeshRayCast,
+    query: &Query<&Spline, With<Rail>>,
+) -> Option<(Entity, RayMeshHit)> {
+    let hits = ray_cast
+        .cast_ray(
+            ray,
+            &RayCastSettings::default()
+                .with_visibility(RayCastVisibility::Any)
+                .with_filter(&|x| query.contains(x))
+                .never_early_exit(),
+        )
+        .to_owned();
     if hits.is_empty() {
         return None;
     }
-    
-    let hit = hits.into_iter().min_by(|x, y| {
-        let a = query.get(x.0).unwrap();
-        let b = query.get(y.0).unwrap();
-        let a = a.projected_position(a.t_from_pos(&x.1.point)).distance_squared(x.1.point);
-        let b = b.projected_position(b.t_from_pos(&y.1.point)).distance_squared(y.1.point);
-        a.total_cmp(&b)
-    }).unwrap();
-    
+
+    let hit = hits
+        .into_iter()
+        .min_by(|x, y| {
+            let a = query.get(x.0).unwrap();
+            let b = query.get(y.0).unwrap();
+            let a = a
+                .projected_position(a.t_from_pos(&x.1.point))
+                .distance_squared(x.1.point);
+            let b = b
+                .projected_position(b.t_from_pos(&y.1.point))
+                .distance_squared(y.1.point);
+            a.total_cmp(&b)
+        })
+        .unwrap();
+
     Some(hit)
 }
 
@@ -598,7 +620,7 @@ fn on_rail_destroy(
     mut feedback: ResMut<CursorFeedback>,
     mut ev_rail_removed: EventWriter<RailRemovedEvent>,
     mut ev_intersection_removed: EventWriter<RailIntersectionRemovedEvent>,
-    children: Query<&Children>
+    children: Query<&Children>,
 ) {
     // Check if there are no trains on this rail
     let entity = trigger.entity();
@@ -613,7 +635,9 @@ fn on_rail_destroy(
         }
     }
 
-    children.iter_descendants(entity).for_each(|x| c.entity(x).despawn());
+    children
+        .iter_descendants(entity)
+        .for_each(|x| c.entity(x).despawn());
     q.get_mut(entity).unwrap().destroy(
         trigger.entity(),
         &mut c,
@@ -623,7 +647,11 @@ fn on_rail_destroy(
     );
 }
 
-fn load_rail_asset(mut c: Commands, mut materials: ResMut<Assets<StandardMaterial>>, asset_server: Res<AssetServer>) {
+fn load_rail_asset(
+    mut c: Commands,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    asset_server: Res<AssetServer>,
+) {
     c.insert_resource(RailAsset {
         material: materials.add(StandardMaterial {
             base_color: Color::srgb_u8(189, 197, 237),
@@ -636,7 +664,8 @@ fn load_rail_asset(mut c: Commands, mut materials: ResMut<Assets<StandardMateria
             base_color: Color::srgb(0.1, 0.1, 0.5),
             ..default()
         }),
-        segment: asset_server.load(GltfAssetLabel::Scene(0).from_asset("models/spline_segment.glb"))
+        segment: asset_server
+            .load(GltfAssetLabel::Scene(0).from_asset("models/spline_segment.glb")),
     });
 }
 

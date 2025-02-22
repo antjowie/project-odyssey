@@ -54,6 +54,7 @@ General gameplay
 - [ ] Replace train with mesh
 - [ ] Investigate into better rail system (perhaps preset matching)
 - [ ] Add save and load
+- [ ] Trace why WASM build freezes on first time entering build mode
 
 ### Build
 You can use cargo as you always would, simply `cargo run` would suffice.

@@ -1,6 +1,6 @@
 //! Loads our initial world
 use super::*;
-use bevy::pbr::{CascadeShadowConfigBuilder, DirectionalLightShadowMap, NotShadowCaster};
+use bevy::pbr::{DirectionalLightShadowMap, NotShadowCaster};
 
 pub(super) fn world_plugin(app: &mut App) {
     app.add_systems(Startup, spawn_test_world);
@@ -10,7 +10,7 @@ fn spawn_test_world(
     mut c: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut config_store: ResMut<GizmoConfigStore>,
+    // mut config_store: ResMut<GizmoConfigStore>,
 ) {
     // Draw gizmos over everything
     // for (_, config, _) in config_store.iter_mut() {
