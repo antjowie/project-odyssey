@@ -65,9 +65,28 @@ fn spawn_test_world(
         NotShadowCaster,
     ));
 
+    // If plane is too big shadows bug out on AMD hardware
+    // https://github.com/bevyengine/bevy/issues/6542
+    for x in -10..=10 {
+        for z in -10..=10 {
+            let size = 1_000.0;
+            c.spawn((
+                Name::new("Floor"),
+                Mesh3d(meshes.add(Plane3d::new(Vec3::Y, Vec2::splat(size)))),
+                MeshMaterial3d(materials.add(Color::WHITE)),
+                PickingBehavior::IGNORE,
+                Transform::from_translation(Vec3::new(
+                    x as f32 * size * 2.0,
+                    0.0,
+                    z as f32 * size * 2.0,
+                )),
+            ));
+        }
+    }
+
     c.spawn((
         Name::new("Floor"),
-        Mesh3d(meshes.add(Plane3d::new(Vec3::Y, Vec2::splat(100_000.0)))),
+        Mesh3d(meshes.add(Plane3d::new(Vec3::Y, Vec2::splat(1_000.0)))),
         MeshMaterial3d(materials.add(Color::WHITE)),
         PickingBehavior::IGNORE,
     ));
