@@ -122,7 +122,6 @@ impl Rail {
             .intersections
             .get_mut(&start_intersection_id)
             .unwrap();
-
         connect_intersection(
             self_entity.id(),
             &spline.controls()[0].forward,

@@ -12,6 +12,7 @@ pub(super) struct SplinePlugin;
 impl Plugin for SplinePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Update, update_spline_mesh);
+        app.register_type::<Spline>();
         app.register_type::<SplineMesh>();
         // app.add_systems(Update, _debug_spline);
     }
@@ -39,7 +40,7 @@ pub struct Spline {
     curve_length: f32,
 }
 
-#[derive(Default, Reflect, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Reflect, Clone, Copy, PartialEq)]
 struct SplineLUT {
     t: f32,
     /// Distance between this and previous pos
@@ -406,7 +407,7 @@ impl Spline {
             gizmos.line(end[2], end[3], Color::srgb(1.0, 0.0, 0.0));
         }
 
-        let mut start_spline = Spline::default();
+        let mut start_spline = self.clone();
         start_spline.controls_override = Some([start[1], start[2]]);
         start_spline.set_controls([
             SplineControl {
@@ -421,7 +422,7 @@ impl Spline {
             },
         ]);
 
-        let mut end_spline = Spline::default();
+        let mut end_spline = self.clone();
         end_spline.controls_override = Some([end[1], end[2]]);
         end_spline.set_controls([
             SplineControl {
