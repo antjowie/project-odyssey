@@ -181,7 +181,6 @@ impl Rail {
         intersections: &mut ResMut<RailIntersections>,
         ev_rail_removed: &mut EventWriter<RailRemovedEvent>,
         ev_intersection_removed: &mut EventWriter<RailIntersectionRemovedEvent>,
-        children: &Query<&Children>,
     ) {
         let mut process = |intersection_id| {
             let intersection = intersections
@@ -217,7 +216,7 @@ impl Rail {
         process(self.joints[1].intersection_id);
 
         ev_rail_removed.send(RailRemovedEvent(self_entity));
-        destroy_with_children(c, self_entity, &children);
+        c.entity(self_entity).despawn_recursive();
     }
 
     /// When we insert an intersection we remove the existing rail, split it into 2 and insert an intersection inbetween
@@ -233,7 +232,6 @@ impl Rail {
         modified_intersection_ids: &mut Vec<Uuid>,
         mut ev_rail_removed: &mut EventWriter<RailRemovedEvent>,
         mut ev_intersection_removed: &mut EventWriter<RailIntersectionRemovedEvent>,
-        children: &Query<&Children>,
         gizmos: Option<&mut Gizmos>,
     ) {
         // Create a joint at the intersection point
@@ -291,7 +289,6 @@ impl Rail {
             &mut intersections,
             &mut ev_rail_removed,
             &mut ev_intersection_removed,
-            &children,
         );
     }
 
@@ -528,19 +525,18 @@ impl RailIntersection {
 
 fn on_rail_mesh_changed(
     mut c: Commands,
-    q: Query<(Entity, &SplineMesh, &Spline), (With<Rail>, Added<Mesh3d>)>,
+    q: Query<
+        (Entity, &SplineMesh, &Spline),
+        (Or<(With<Rail>, With<RailPlanner>)>, Changed<SplineMesh>),
+    >,
     asset: Res<RailAsset>,
-    children: Query<&Children>,
     mut meshes: ResMut<Assets<Mesh>>,
     rail_asset: Res<RailAsset>,
 ) {
     q.iter().for_each(|(e, mesh, spline)| {
-        children
-            .iter_descendants(e)
-            .for_each(|x| c.entity(x).despawn());
-
         let mut ec = c.entity(e);
-        ec.clear_children();
+        ec.despawn_descendants();
+
         ec.with_children(|parent| {
             const SIZE: f32 = 0.12;
             const Y_OFFSET: f32 = 0.08;
@@ -622,7 +618,6 @@ fn on_rail_destroy(
     mut feedback: ResMut<CursorFeedback>,
     mut ev_rail_removed: EventWriter<RailRemovedEvent>,
     mut ev_intersection_removed: EventWriter<RailIntersectionRemovedEvent>,
-    children: Query<&Children>,
 ) {
     // Check if there are no trains on this rail
     let entity = trigger.entity();
@@ -643,7 +638,6 @@ fn on_rail_destroy(
         &mut intersections,
         &mut ev_rail_removed,
         &mut ev_intersection_removed,
-        &children,
     );
 }
 

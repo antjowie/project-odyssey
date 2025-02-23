@@ -126,7 +126,9 @@ fn on_placeable_preview_changed_event(
 ) {
     let e_player = player.into_inner();
 
-    previews.iter().for_each(|e| c.entity(e).try_despawn());
+    previews
+        .iter()
+        .for_each(|e| c.entity(e).try_despawn_recursive());
     for e in ev.read() {
         let t = e
             .hovered_entity
@@ -152,13 +154,12 @@ fn cleanup_build_preview_on_state_change(
     mut c: Commands,
     q: Query<Entity, With<PlaceablePreview>>,
     mut event: EventReader<PlayerStateChangedEvent>,
-    children: Query<&Children>,
 ) {
     {
         for e in event.read() {
             if e.new_state == PlayerState::Viewing && e.old_state == PlayerState::Building {
                 q.into_iter().for_each(|e| {
-                    destroy_with_children(&mut c, e, &children);
+                    c.entity(e).despawn_recursive();
                 });
             }
         }

@@ -5,12 +5,7 @@ use super::*;
 pub(super) fn destroyer_plugin(app: &mut App) {
     app.add_systems(Startup, load_destroyer_asset);
     app.add_event::<DestroyEvent>();
-    app.add_systems(
-        Update,
-        handle_destroyer.run_if(
-            in_player_state(PlayerState::Building).and(is_placeable_preview(Placeable::Destroyer)),
-        ),
-    );
+    app.add_systems(Update, handle_destroyer);
 }
 
 #[derive(Resource)]
@@ -31,69 +26,76 @@ fn load_destroyer_asset(mut c: Commands, mut materials: ResMut<Assets<StandardMa
     });
 }
 
-pub fn on_destroy_default(
-    trigger: Trigger<DestroyEvent>,
-    mut c: Commands,
-    children: Query<&Children>,
-) {
+pub fn on_destroy_default(trigger: Trigger<DestroyEvent>, mut c: Commands) {
     let e = trigger.entity();
-    destroy_with_children(&mut c, e, &children);
+    c.entity(e).despawn_recursive();
 }
 
 fn handle_destroyer(
     mut c: Commands,
     mut to_destroy: Query<(Entity, &ConsiderForDestruction)>,
     destroyables: Query<Entity, (With<Placeable>, Without<PlaceablePreview>)>,
-    player: Single<(&PlayerCursor, &ActionState<PlayerBuildAction>)>,
+    player: Query<(
+        &PlayerCursor,
+        &ActionState<PlayerBuildAction>,
+        &PlayerState,
+        &Placeable,
+    )>,
     mut ray_cast: MeshRayCast,
     asset: Res<DestroyerAsset>,
     mut materials: Query<&mut MeshMaterial3d<StandardMaterial>>,
     children: Query<&Children>,
     parents: Query<&Parent>,
 ) {
-    let (cursor, input) = player.into_inner();
+    if player.is_empty() {
+        return;
+    }
 
-    let hits = ray_cast.cast_ray(
-        cursor.ray,
-        &RayCastSettings::default()
-            .with_visibility(RayCastVisibility::Any)
-            .always_early_exit(),
-    );
+    let (cursor, input, state, placeable) = player.single();
+
     let mut hovered = None;
-    if hits.len() > 0 {
-        if destroyables.contains(hits[0].0) {
-            hovered = Some(hits[0].0);
-        } else {
-            hovered = parents
-                .iter_ancestors(hits[0].0)
-                .find(|x| destroyables.contains(*x));
-        }
-    }
-
-    if let Some(hovered) = hovered {
-        // If the hovered entity is not yet updated
-        if to_destroy.contains(hovered) == false {
-            let mut handle = |e| {
-                let handle = materials.get_mut(e).ok();
-                c.entity(e).insert(if let Some(mut handle) = handle {
-                    let destroyer = ConsiderForDestruction(Some(handle.0.clone()));
-                    handle.0 = asset.material.clone();
-                    destroyer
-                } else {
-                    ConsiderForDestruction(None)
-                });
-            };
-
-            handle(hovered);
-            children.iter_descendants(hovered).for_each(handle);
-        }
-    }
-
-    if input.just_pressed(&PlayerBuildAction::Interact) {
-        c.trigger_targets(
-            DestroyEvent,
-            to_destroy.iter().map(|(e, _)| e).collect::<Vec<Entity>>(),
+    if state == &PlayerState::Building && placeable == &Placeable::Destroyer {
+        let hits = ray_cast.cast_ray(
+            cursor.ray,
+            &RayCastSettings::default()
+                .with_visibility(RayCastVisibility::Any)
+                .always_early_exit(),
         );
+        if hits.len() > 0 {
+            if destroyables.contains(hits[0].0) {
+                hovered = Some(hits[0].0);
+            } else {
+                hovered = parents
+                    .iter_ancestors(hits[0].0)
+                    .find(|x| destroyables.contains(*x));
+            }
+        }
+
+        if let Some(hovered) = hovered {
+            // If the hovered entity is not yet updated
+            if to_destroy.contains(hovered) == false {
+                let mut handle = |e| {
+                    let handle = materials.get_mut(e).ok();
+                    c.entity(e).insert(if let Some(mut handle) = handle {
+                        let destroyer = ConsiderForDestruction(Some(handle.0.clone()));
+                        handle.0 = asset.material.clone();
+                        destroyer
+                    } else {
+                        ConsiderForDestruction(None)
+                    });
+                };
+
+                handle(hovered);
+                children.iter_descendants(hovered).for_each(handle);
+            }
+        }
+
+        if input.just_pressed(&PlayerBuildAction::Interact) {
+            c.trigger_targets(
+                DestroyEvent,
+                to_destroy.iter().map(|(e, _)| e).collect::<Vec<Entity>>(),
+            );
+        }
     }
 
     // For all unhovered entities, undo their destruction

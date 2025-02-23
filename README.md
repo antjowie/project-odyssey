@@ -125,6 +125,9 @@ Migration
 * When it comes to input handling, use the command pattern. For example, left click is Enter Build Mode, but when hovering over an interactable it should be Interact. This should also auto populate and the current system doesn't support that.
 
 ### Some rust/bevy pain points
+* Errors can be cryptic
+  * I try to replace children of an entity, but get an error that the command queue contains un-applied commands that are being dropped. It's quite unclear why this happens.
+    * It ultimately was fixed by using despawn_descendants instead of children.despawn so it game down to my lack of knowledge, but it still can be a bit painful to figure out.
 * Debugger experience is subpar. A vec of dyn objects gives pretty much no info (pointer to pointer to pointer, nothning concrete) As does a Res type. It might be due to opt-levels but I can't put it lower cuz I run into linker limitations, why is the limit a 16bit integer anyway?
   * For example, our input vec of type Buttonlike gives us `vec->buf->inner->ptr->pointer->pointer->*pointer = 0`... I'd expect some more concrete data but maybe the external lib just does some crazy stuff that I have to dive a bit deeper into
   * Debugger also keeps crashing, but this seems to be a known issue with PDB format and DWARF is preferred.

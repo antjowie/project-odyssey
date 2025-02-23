@@ -347,7 +347,7 @@ impl Spline {
     }
 
     pub fn forward(&self, t: f32) -> Dir3 {
-        Dir3::new(self.curve.velocity(t).normalize()).unwrap()
+        Dir3::new(self.curve.velocity(t).normalize()).unwrap_or_else(|_| Dir3::NEG_Z)
     }
 
     pub fn distance_along_curve(&self, t: f32) -> f32 {

@@ -23,6 +23,7 @@ pub fn rail_planner_plugin(app: &mut App) {
 
 #[derive(Component)]
 #[require(
+    Name(|| Name::new("RailPlanner")),
     Spline(create_rail_spline),
     SplineMesh(|| SplineMesh::default().with_width(RAIL_SEGMENT_WIDTH)),
     NotShadowCaster
@@ -95,7 +96,6 @@ fn handle_build_state_cancel_event(
     mut trigger: Trigger<BuildStateCancelEvent>,
     mut q: Query<&mut RailPlanner>,
     mut c: Commands,
-    children: Query<&Children>,
 ) {
     trigger.propagate(false);
     let mut plan = q.get_mut(trigger.entity()).unwrap();
@@ -105,7 +105,7 @@ fn handle_build_state_cancel_event(
     if plan.start_intersection_id.is_none() && !plan.is_initial_placement {
         plan.is_initial_placement = true;
     } else {
-        destroy_with_children(&mut c, trigger.entity(), &children);
+        c.entity(trigger.entity()).despawn_recursive();
     }
 }
 
@@ -249,7 +249,6 @@ fn update_rail_planner(
     mut ev_changed: EventWriter<RailIntersectionChangedEvent>,
     mut ev_rail_removed: EventWriter<RailRemovedEvent>,
     mut ev_intersection_removed: EventWriter<RailIntersectionRemovedEvent>,
-    children: Query<&Children>,
 ) {
     let (mut cursor, input) = player_states.single_mut();
 
@@ -463,7 +462,6 @@ fn update_rail_planner(
                         &mut modified_intersection_ids,
                         &mut ev_rail_removed,
                         &mut ev_intersection_removed,
-                        &children,
                         None,
                     );
                 }
@@ -481,7 +479,6 @@ fn update_rail_planner(
                         &mut modified_intersection_ids,
                         &mut ev_rail_removed,
                         &mut ev_intersection_removed,
-                        &children,
                         None,
                     );
                 }
