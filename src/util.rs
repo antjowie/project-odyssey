@@ -7,6 +7,15 @@ pub fn default_text_font() -> TextFont {
     }
 }
 
+pub fn destroy_with_children(c: &mut Commands, entity: Entity, children: &Query<&Children>) {
+    let mut destroy = |e| {
+        c.entity(e).despawn();
+    };
+
+    children.iter_descendants(entity).for_each(&mut destroy);
+    destroy(entity);
+}
+
 /// Returns an observer that updates the entity's material to the one specified.
 /// https://bevyengine.org/examples/picking/mesh-picking/
 pub fn update_material_on<E>(

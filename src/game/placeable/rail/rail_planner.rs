@@ -95,6 +95,7 @@ fn handle_build_state_cancel_event(
     mut trigger: Trigger<BuildStateCancelEvent>,
     mut q: Query<&mut RailPlanner>,
     mut c: Commands,
+    children: Query<&Children>,
 ) {
     trigger.propagate(false);
     let mut plan = q.get_mut(trigger.entity()).unwrap();
@@ -104,7 +105,7 @@ fn handle_build_state_cancel_event(
     if plan.start_intersection_id.is_none() && !plan.is_initial_placement {
         plan.is_initial_placement = true;
     } else {
-        c.entity(trigger.entity()).despawn();
+        destroy_with_children(&mut c, trigger.entity(), &children);
     }
 }
 
@@ -248,6 +249,7 @@ fn update_rail_planner(
     mut ev_changed: EventWriter<RailIntersectionChangedEvent>,
     mut ev_rail_removed: EventWriter<RailRemovedEvent>,
     mut ev_intersection_removed: EventWriter<RailIntersectionRemovedEvent>,
+    children: Query<&Children>,
 ) {
     let (mut cursor, input) = player_states.single_mut();
 
@@ -280,7 +282,7 @@ fn update_rail_planner(
                     let towards_2d = Vec2::from_angle(FRAC_PI_2).rotate(to_end.xz());
                     let normal = vec3(towards_2d.x, 0., towards_2d.y);
                     gizmos.line(controls[0].pos, controls[0].pos + normal, Color::BLACK);
-                    controls[1].forward = Dir3::new_unchecked(-incidence.reflect(normal));
+                    controls[1].forward = Dir3::new(-incidence.reflect(normal)).unwrap();
                 }
                 PathCurveMode::Straight => {
                     controls[1].forward = -controls[0].forward;
@@ -461,6 +463,7 @@ fn update_rail_planner(
                         &mut modified_intersection_ids,
                         &mut ev_rail_removed,
                         &mut ev_intersection_removed,
+                        &children,
                         None,
                     );
                 }
@@ -478,6 +481,7 @@ fn update_rail_planner(
                         &mut modified_intersection_ids,
                         &mut ev_rail_removed,
                         &mut ev_intersection_removed,
+                        &children,
                         None,
                     );
                 }

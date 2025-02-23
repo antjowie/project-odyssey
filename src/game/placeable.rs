@@ -152,12 +152,13 @@ fn cleanup_build_preview_on_state_change(
     mut c: Commands,
     q: Query<Entity, With<PlaceablePreview>>,
     mut event: EventReader<PlayerStateChangedEvent>,
+    children: Query<&Children>,
 ) {
     {
         for e in event.read() {
             if e.new_state == PlayerState::Viewing && e.old_state == PlayerState::Building {
                 q.into_iter().for_each(|e| {
-                    c.entity(e).despawn();
+                    destroy_with_children(&mut c, e, &children);
                 });
             }
         }

@@ -37,12 +37,7 @@ pub fn on_destroy_default(
     children: Query<&Children>,
 ) {
     let e = trigger.entity();
-    let mut destroy = |e| {
-        info!("Destoy {:?}", e);
-        c.entity(e).despawn();
-    };
-    children.iter_descendants(e).for_each(&mut destroy);
-    destroy(e);
+    destroy_with_children(&mut c, e, &children);
 }
 
 fn handle_destroyer(

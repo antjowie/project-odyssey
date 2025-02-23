@@ -5,7 +5,7 @@ A train simulator "game"?
 
 ### Todo
 
-Rail editor
+**Rail editor**
 - [x] Rail planner placement iteration
 - [x] Setup rail planner validations
 - [x] Reintroduce snapping to end_intersection if one is hovered
@@ -19,7 +19,7 @@ Rail editor
 - [x] Expand rail from arbitrary area of rail
 - [ ] Add vertical rail building
   - [x] Add proper raycasting
-- [ ] Add copy pasta? 
+- [ ] Add copy pasta?
 - [x] Return positions uniformly spaced
 - [ ] Validate against overlapping rails where curve intersects < 45 degrees
 - [x] Add placeable picker
@@ -49,7 +49,7 @@ Pathfinding
 General gameplay
 - [x] Generic cursor feedback
 - [ ] Add outline shader system
-- [ ] Create better shadows 
+- [ ] Create better shadows
 - [ ] Build spline mesh from existing model
 - [ ] Replace train with mesh
 - [ ] Investigate into better rail system (perhaps preset matching)
@@ -61,9 +61,9 @@ You can use cargo as you always would, simply `cargo run` would suffice.
 
 For some different options you can check [run.bat](run.bat) which I use when developing:
 * Run `run.bat` for fastest iteration times
-* For testing web builds 
+* For testing web builds
   * Prereqs
-    * Run `cargo install wasm-server-runner` 
+    * Run `cargo install wasm-server-runner`
     * Run `rustup target add wasm32-unknown-unknown`
   * Now anytime you want you can run `run.bat web`
 
@@ -84,7 +84,7 @@ Truth be told, the debugger crashes a lot for me. It seems to [be a known issue]
 
 If you also use this, you have to do some manual setup since unfortunately I've not been able to set the environmental variables generically:
 1. Open "Edit Configurations"
-2. In command add `--features=bevy/dynamic_linking` 
+2. In command add `--features=bevy/dynamic_linking`
 3. In environmental variables add `PATH=C:\Users\Angelo\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin\\;C:\Dev\project-odyssey\target\debug\deps`
    1. Note that you should replace the 2 paths with your own values. If you know of a way to use `%USERPROFILE%` it could be made generic and this config can then be stored, so no need to manually do anything but for now that doesn't seem possible.
 
@@ -122,7 +122,7 @@ Migration
 * [Bevy Examples](https://bevyengine.org/examples/)
 
 ### Lessons for future
-* When it comes to input handling, use the command pattern. For example, left click is Enter Build Mode, but when hovering over an interactable it should be Interact. This should also auto populate and the current system doesn't support that. 
+* When it comes to input handling, use the command pattern. For example, left click is Enter Build Mode, but when hovering over an interactable it should be Interact. This should also auto populate and the current system doesn't support that.
 
 ### Some rust/bevy pain points
 * Debugger experience is subpar. A vec of dyn objects gives pretty much no info (pointer to pointer to pointer, nothning concrete) As does a Res type. It might be due to opt-levels but I can't put it lower cuz I run into linker limitations, why is the limit a 16bit integer anyway?

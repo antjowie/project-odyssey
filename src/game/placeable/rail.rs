@@ -181,6 +181,7 @@ impl Rail {
         intersections: &mut ResMut<RailIntersections>,
         ev_rail_removed: &mut EventWriter<RailRemovedEvent>,
         ev_intersection_removed: &mut EventWriter<RailIntersectionRemovedEvent>,
+        children: &Query<&Children>,
     ) {
         let mut process = |intersection_id| {
             let intersection = intersections
@@ -216,7 +217,7 @@ impl Rail {
         process(self.joints[1].intersection_id);
 
         ev_rail_removed.send(RailRemovedEvent(self_entity));
-        c.entity(self_entity).despawn();
+        destroy_with_children(c, self_entity, &children);
     }
 
     /// When we insert an intersection we remove the existing rail, split it into 2 and insert an intersection inbetween
@@ -232,6 +233,7 @@ impl Rail {
         modified_intersection_ids: &mut Vec<Uuid>,
         mut ev_rail_removed: &mut EventWriter<RailRemovedEvent>,
         mut ev_intersection_removed: &mut EventWriter<RailIntersectionRemovedEvent>,
+        children: &Query<&Children>,
         gizmos: Option<&mut Gizmos>,
     ) {
         // Create a joint at the intersection point
@@ -289,6 +291,7 @@ impl Rail {
             &mut intersections,
             &mut ev_rail_removed,
             &mut ev_intersection_removed,
+            &children,
         );
     }
 
@@ -634,15 +637,13 @@ fn on_rail_destroy(
         }
     }
 
-    children
-        .iter_descendants(entity)
-        .for_each(|x| c.entity(x).despawn());
     q.get_mut(entity).unwrap().destroy(
         trigger.entity(),
         &mut c,
         &mut intersections,
         &mut ev_rail_removed,
         &mut ev_intersection_removed,
+        &children,
     );
 }
 
