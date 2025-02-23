@@ -2,6 +2,7 @@ use super::*;
 use bevy::{
     math::bounding::{BoundingSphere, IntersectsVolume},
     picking::{focus::PickingInteraction, mesh_picking::ray_cast::RayMeshHit},
+    time::common_conditions::on_timer,
     utils::{hashbrown::HashSet, HashMap},
 };
 use bounding::BoundingVolume;
@@ -35,6 +36,8 @@ pub(super) fn rail_plugin(app: &mut App) {
 }
 
 pub const RAIL_MIN_LENGTH: f32 = 10.;
+// Add a max to prevent crazy rail lengths causing freezes. It will still cause lag but that is up to the user
+pub const RAIL_MAX_LENGTH: f32 = 10000.;
 pub const RAIL_SEGMENT_LENGTH: f32 = 1.0;
 pub const RAIL_SEGMENT_WIDTH: f32 = 1.435;
 pub const RAIL_SEGMENT_HEIGHT: f32 = 0.20;
@@ -526,25 +529,26 @@ impl RailIntersection {
 fn on_rail_mesh_changed(
     mut c: Commands,
     q: Query<
-        (Entity, &SplineMesh, &Spline),
+        (Entity, &SplineMesh, &Spline, Option<&RailPlanner>),
         (Or<(With<Rail>, With<RailPlanner>)>, Changed<SplineMesh>),
     >,
     asset: Res<RailAsset>,
     mut meshes: ResMut<Assets<Mesh>>,
     rail_asset: Res<RailAsset>,
 ) {
-    q.iter().for_each(|(e, mesh, spline)| {
+    q.iter().for_each(|(e, mesh, spline, planner)| {
         let mut ec = c.entity(e);
         ec.despawn_descendants();
 
         ec.with_children(|parent| {
             const SIZE: f32 = 0.12;
-            const Y_OFFSET: f32 = 0.08;
-            const DISTANCE: f32 = 0.5;
+            const Y_OFFSET: f32 = 0.07;
+            const DISTANCE: f32 = 0.48;
             for i in [-DISTANCE, DISTANCE] {
                 let mut mesh = SplineMesh::create_mesh();
 
                 let buffers = SplineMesh::create_buffers(&spline, SIZE, SIZE, vec2(i, Y_OFFSET));
+                // Style with thicker rails that go through segments, not sure if I like it though
                 // SplineMesh::create_buffers(&spline, SIZE, SIZE + Y_OFFSET, vec2(i, 0.0));
 
                 mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, buffers.0);
@@ -558,17 +562,19 @@ fn on_rail_mesh_changed(
                 ));
             }
 
-            spline.curve_points().iter().for_each(|pos| {
-                let t = spline.t_from_pos(pos);
-                let forward = spline.forward(t);
-                parent.spawn((
-                    SceneRoot(asset.segment.clone()),
-                    Transform::from_translation(*pos)
-                        .with_scale(Vec3::new(mesh.width, mesh.width, mesh.width))
-                        .with_rotation(Quat::from_rotation_arc(Vec3::NEG_Z, forward.as_vec3())),
-                    Visibility::Visible,
-                ));
-            });
+            if planner.is_none() {
+                spline.curve_points().iter().for_each(|pos| {
+                    let t = spline.t_from_pos(pos);
+                    let forward = spline.forward(t);
+                    parent.spawn((
+                        SceneRoot(asset.segment.clone()),
+                        Transform::from_translation(*pos)
+                            .with_scale(Vec3::new(mesh.width, mesh.width, mesh.width))
+                            .with_rotation(Quat::from_rotation_arc(Vec3::NEG_Z, forward.as_vec3())),
+                        Visibility::Visible,
+                    ));
+                });
+            }
         });
     });
 }

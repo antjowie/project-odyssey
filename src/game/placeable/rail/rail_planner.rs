@@ -256,7 +256,13 @@ fn update_rail_planner(
         let mut controls = spline.controls().clone();
         controls[1].pos = cursor.build_pos;
 
-        let delta = controls[1].pos - controls[0].pos;
+        let mut delta = controls[1].pos - controls[0].pos;
+        let length = delta.length();
+        if length > RAIL_MAX_LENGTH {
+            controls[1].pos = controls[0].pos + delta.normalize() * RAIL_MAX_LENGTH;
+            delta = controls[1].pos - controls[0].pos;
+        }
+
         let to_end = Dir3::new(delta).unwrap_or(Dir3::new_unchecked(Vec3::NEG_Z));
         plan.status = RailPlannerStatus::Valid;
 
