@@ -4,42 +4,53 @@ use bevy::{ecs::traversal::Traversal, pbr::NotShadowCaster};
 
 use destroyer::*;
 use rail::*;
+use station::*;
 use train::*;
 pub mod destroyer;
 pub mod rail;
+pub mod station;
 pub mod train;
 
 pub(super) fn placeable_plugin(app: &mut App) {
     app.add_systems(Startup, load_placeable_assets);
     app.add_plugins(destroyer_plugin);
     app.add_plugins(rail_plugin);
+    app.add_plugins(station_plugin);
     app.add_plugins(train_plugin);
     app.add_event::<PlaceablePreviewChangedEvent>();
 
     app.add_systems(
         Update,
         (
-            pick_hovered_placeable,
-            cleanup_build_preview_on_state_change.run_if(on_event::<PlayerStateChangedEvent>),
-            update_picked_placeable.run_if(in_player_state(PlayerState::Building)),
-            on_placeable_preview_changed_event.run_if(on_event::<PlaceablePreviewChangedEvent>),
             (
-                on_placeable_preview_added,
-                update_placeable_preview_material,
+                pick_hovered_placeable,
+                update_picked_placeable.run_if(in_player_state(PlayerState::Building)),
+                (
+                    on_placeable_preview_added,
+                    update_placeable_preview_material,
+                )
+                    .chain(),
             )
-                .chain(),
+                .in_set(GameSet::Update),
+            on_placeable_preview_changed_event
+                .in_set(GameSet::Spawn)
+                .run_if(on_event::<PlaceablePreviewChangedEvent>),
+            cleanup_build_preview_on_state_change
+                .in_set(GameSet::Despawn)
+                .run_if(on_event::<PlayerStateChangedEvent>),
         ),
     );
-    app.add_systems(PostUpdate, on_placeable_preview_removed);
+    app.add_systems(Update, on_placeable_preview_removed);
 }
 
 /// Represents a placeable type
 /// When used on PlayerState represents desired placeable to place
-#[derive(Component, Default, PartialEq, Clone)]
+#[derive(Component, Default, PartialEq, Clone, Debug)]
 pub enum Placeable {
     #[default]
     Rail,
     Train,
+    Station,
 
     /// A special case, when this intention is selected whatever we click on gets removed
     Destroyer,
@@ -113,7 +124,7 @@ fn on_placeable_preview_changed_event(
     mut c: Commands,
     mut ev: EventReader<PlaceablePreviewChangedEvent>,
     player: Single<Entity, With<PlayerState>>,
-    previews: Query<Entity, With<PlaceablePreview>>,
+    previews: Query<(Entity, &Placeable), With<PlaceablePreview>>,
     placeables: Query<
         &Transform,
         (
@@ -123,13 +134,21 @@ fn on_placeable_preview_changed_event(
         ),
     >,
     train: Res<TrainAsset>,
+    station: Res<StationAsset>,
 ) {
     let e_player = player.into_inner();
 
-    previews
-        .iter()
-        .for_each(|e| c.entity(e).try_despawn_recursive());
     for e in ev.read() {
+        // Check if preview is different from what we currently have
+        if previews.is_empty() == false {
+            let (e_preview, preview) = previews.single();
+            if preview == &e.new {
+                return;
+            } else {
+                c.entity(e_preview).despawn_recursive();
+            }
+        }
+
         let t = e
             .hovered_entity
             .map(|x| placeables.get(x).unwrap().to_owned());
@@ -140,13 +159,24 @@ fn on_placeable_preview_changed_event(
             Placeable::Train => {
                 c.spawn((
                     Name::new("TrainPreview"),
+                    Placeable::Train,
                     PlaceablePreview::new(e_player),
                     SceneRoot(train.scene.clone()),
                     t.unwrap_or_default().with_scale(train.scale),
                 ));
             }
+            Placeable::Station => {
+                c.spawn((
+                    Name::new("StationPreview"),
+                    Placeable::Station,
+                    PlaceablePreview::new(e_player),
+                    SceneRoot(station.scene.clone()),
+                    t.unwrap_or_default().with_scale(station.scale),
+                ));
+            }
             Placeable::Destroyer => {}
         };
+        return;
     }
 }
 
@@ -230,6 +260,7 @@ fn update_picked_placeable(
         };
         handle(PlayerBuildAction::PickRail, Placeable::Rail);
         handle(PlayerBuildAction::PickTrain, Placeable::Train);
+        handle(PlayerBuildAction::PickStation, Placeable::Station);
         handle(PlayerBuildAction::PickDestroy, Placeable::Destroyer);
     });
 }

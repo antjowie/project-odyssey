@@ -1,21 +1,14 @@
-use core::f32;
-
+use super::*;
 use bevy::{
     asset::RenderAssetUsages,
-    color::palettes::tailwind::{BLUE_500, GREEN_500, RED_500},
-    prelude::*,
     render::mesh::{Indices, MeshAabb},
 };
 
-pub(super) struct SplinePlugin;
-
-impl Plugin for SplinePlugin {
-    fn build(&self, app: &mut App) {
-        app.add_systems(Update, update_spline_mesh);
-        app.register_type::<Spline>();
-        app.register_type::<SplineMesh>();
-        // app.add_systems(Update, _debug_spline);
-    }
+pub(super) fn spline_plugin(app: &mut App) {
+    app.add_systems(Update, update_spline_mesh.in_set(GameSet::Update));
+    app.register_type::<Spline>();
+    app.register_type::<SplineMesh>();
+    // app.add_systems(Update, _debug_spline);
 }
 
 const LUT_SAMPLES: usize = 32;

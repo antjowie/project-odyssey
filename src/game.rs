@@ -2,29 +2,31 @@
 //!
 //! These systems are made with the purpose to serve gameplay. It wouldn't make sense to use them outside
 //! of this context.
-//!
-//! You could argue input and camera are also strongly game related, but these systems can still be used without
-//! knowing about anything game related. To not bloat the root and ease reuse, the distinction is made.
 
 use std::f32::consts::PI;
 
 use avian3d::prelude::Collider;
 use bevy::{color::palettes::tailwind::*, picking::pointer::PointerInteraction};
-use bevy::{math::*, prelude::*, window::PrimaryWindow};
+use bevy::{prelude::*, window::PrimaryWindow};
 
-use crate::camera::*;
-use crate::input::*;
 use crate::util::*;
+
+use camera::*;
 use cursor_feedback::*;
+use input::*;
 use placeable::*;
 use player::*;
 use selectable::*;
+use spline::*;
 use world::*;
 
+pub mod camera;
 pub mod cursor_feedback;
+pub mod input;
 pub mod placeable;
 pub mod player;
 pub mod selectable;
+pub mod spline;
 pub mod world;
 
 /// All game systems and rules
@@ -33,11 +35,21 @@ pub struct GamePlugin;
 
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
+        app.add_plugins(camera_plugin);
         app.add_plugins(cursor_feedback_plugin);
         app.add_plugins(placeable_plugin);
         app.add_plugins(player_plugin);
         app.add_plugins(selectable_plugin);
+        app.add_plugins(spline_plugin);
         app.add_plugins(world_plugin);
+
+        app.configure_sets(
+            Update,
+            (
+                GameSet::Spawn.before(GameSet::Update),
+                GameSet::Despawn.after(GameSet::Update),
+            ),
+        );
 
         app.add_systems(
             Update,
@@ -45,10 +57,18 @@ impl Plugin for GamePlugin {
                 generate_collider_on_mesh_changed,
                 draw_mesh_intersections,
                 draw_build_grid.run_if(not(in_player_state(PlayerState::Viewing))),
-            ),
+            )
+                .in_set(GameSet::Update),
         );
         app.register_type::<PlayerCursor>();
     }
+}
+
+#[derive(SystemSet, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum GameSet {
+    Spawn,
+    Update,
+    Despawn,
 }
 
 #[derive(Component, Default)]
@@ -87,7 +107,7 @@ fn draw_build_grid(mut gizmos: Gizmos, player: Single<(&PlayerCursor, &Placeable
     gizmos.grid(
         Isometry3d {
             rotation: Quat::from_axis_angle(Vec3::X, -PI * 0.5),
-            translation: vec3(cursor.world_grid_pos.x, 0.01, cursor.world_grid_pos.z).into(),
+            translation: Vec3::new(cursor.world_grid_pos.x, 0.01, cursor.world_grid_pos.z).into(),
         },
         UVec2::splat(16),
         Vec2::splat(1.0),

@@ -5,7 +5,7 @@ use super::*;
 pub(super) fn destroyer_plugin(app: &mut App) {
     app.add_systems(Startup, load_destroyer_asset);
     app.add_event::<DestroyEvent>();
-    app.add_systems(Update, handle_destroyer);
+    app.add_systems(Update, handle_destroyer.in_set(GameSet::Despawn));
 }
 
 #[derive(Resource)]

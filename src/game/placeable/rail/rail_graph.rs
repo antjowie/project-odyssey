@@ -18,16 +18,13 @@ pub fn rail_graph_plugin(app: &mut App) {
         app.insert_resource(RailGraph::default());
         app.add_systems(
             Update,
-            debug_rail_graph.run_if(in_player_state(PlayerState::Building)),
-        );
-        app.add_systems(
-            // PostUpdate ensures that components for new rails are added
-            PostUpdate,
             (
+                debug_rail_graph.run_if(in_player_state(PlayerState::Building)),
                 on_rail_intersection_changed.run_if(on_event::<RailIntersectionChangedEvent>),
                 on_rail_intersection_removed.run_if(on_event::<RailIntersectionRemovedEvent>),
                 on_rail_removed.run_if(on_event::<RailRemovedEvent>),
-            ),
+            )
+                .in_set(GameSet::Update),
         );
     }
 }

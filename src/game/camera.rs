@@ -1,23 +1,20 @@
-use crate::{game::*, input::*};
-use bevy::{math::vec3, pbr::CascadeShadowConfigBuilder, prelude::*};
+use super::*;
+use bevy::pbr::CascadeShadowConfigBuilder;
 use player::PlayerCursor;
 
-pub struct CameraPlugin;
-
-impl Plugin for CameraPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_systems(
-            Update,
-            // Grab Cursor will likely need a software cursor, cuz the harware impl seems to not have a lot of parity
-            (
-                (update_pan_orbit_camera).run_if(any_with_component::<PanOrbitCamera>),
-                update_shadow_map,
-            ),
-        );
-        app.add_plugins(InputContextPlugin::<CameraAction>::default());
-        app.register_type::<PanOrbitCamera>();
-        app.register_type::<PanOrbitCameraSettings>();
-    }
+pub(super) fn camera_plugin(app: &mut App) {
+    app.add_systems(
+        Update,
+        // Grab Cursor will likely need a software cursor, cuz the harware impl seems to not have a lot of parity
+        (
+            (update_pan_orbit_camera).run_if(any_with_component::<PanOrbitCamera>),
+            update_shadow_map,
+        )
+            .in_set(GameSet::Update),
+    );
+    app.add_plugins(InputContextPlugin::<CameraAction>::default());
+    app.register_type::<PanOrbitCamera>();
+    app.register_type::<PanOrbitCameraSettings>();
 }
 
 #[derive(
@@ -173,7 +170,7 @@ fn update_pan_orbit_camera(
             // Calculate translation
             let direction = input.axis_pair(&CameraAction::Translate);
             let forward = Quat::from_axis_angle(Vec3::Y, state.yaw);
-            let direction = forward * vec3(direction.x, 0.0, direction.y);
+            let direction = forward * Vec3::new(direction.x, 0.0, direction.y);
             let desired_velocity = direction.normalize_or_zero()
                 * settings
                     .max_speed_zoomed

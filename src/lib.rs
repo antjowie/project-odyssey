@@ -4,11 +4,8 @@ use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 use bevy_rand::{plugin::EntropyPlugin, prelude::WyRand};
 
-pub mod camera;
 pub mod debug;
 pub mod game;
-pub mod input;
-pub mod spline;
 pub mod util;
 
 /// Plugin that represents the game
@@ -31,10 +28,8 @@ impl Plugin for AppPlugin {
             PhysicsPlugins::default(),
             EguiPlugin,
             MeshPickingPlugin,
-            camera::CameraPlugin,
             debug::DebugPlugin,
             game::GamePlugin,
-            spline::SplinePlugin,
         ));
     }
 }

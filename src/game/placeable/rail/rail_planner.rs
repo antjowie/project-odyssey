@@ -13,6 +13,7 @@ pub fn rail_planner_plugin(app: &mut App) {
             update_rail_planner,
             draw_rail_planner,
         )
+            .in_set(GameSet::Update)
             .run_if(
                 // We use any with compnent as we assume it exists on some of the funcs
                 any_with_component::<InputContext<PlayerBuildAction>>
@@ -228,6 +229,7 @@ fn update_intitial_rail_planner(
     {
         c.spawn(plan)
             .insert(spline)
+            .insert(Placeable::Rail)
             .insert(PlaceablePreview::new(state_e))
             .insert(MeshMaterial3d(asset.material.clone()))
             .observe(handle_build_state_cancel_event);

@@ -9,15 +9,9 @@ pub(super) fn selectable_plugin(app: &mut App) {
         (
             unselect_when_leaving_view_state.run_if(on_event::<PlayerStateChangedEvent>),
             on_selected_changed_event.run_if(on_event::<SelectedChangedEvent>),
-        ),
-    );
-    app.add_systems(
-        Update,
-        handle_selected_input_in_view_state.run_if(
-            not(on_event::<SelectedChangedEvent>),
-            // handle_selected_input_in_view_state.run_if(
-            //     in_player_state(PlayerState::Viewing).and(not(on_event::<SelectedChangedEvent>)),
-        ),
+            handle_selected_input_in_view_state.run_if(not(on_event::<SelectedChangedEvent>)),
+        )
+            .in_set(GameSet::Update),
     );
 }
 

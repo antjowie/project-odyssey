@@ -1,15 +1,12 @@
 use super::*;
 use bevy::{
-    math::bounding::{BoundingSphere, IntersectsVolume},
+    math::bounding::{BoundingSphere, BoundingVolume, IntersectsVolume},
     picking::{focus::PickingInteraction, mesh_picking::ray_cast::RayMeshHit},
-    time::common_conditions::on_timer,
     utils::{hashbrown::HashSet, HashMap},
 };
-use bounding::BoundingVolume;
 use cursor_feedback::CursorFeedback;
 use uuid::Uuid;
 
-use crate::spline::*;
 use rail_planner::*;
 
 pub mod rail_graph;
@@ -24,11 +21,13 @@ pub(super) fn rail_plugin(app: &mut App) {
     app.add_event::<RailIntersectionRemovedEvent>();
     app.add_event::<RailRemovedEvent>();
     app.add_systems(Startup, load_rail_asset);
+
     app.add_systems(
         Update,
         (
-            on_rail_mesh_changed,
+            on_rail_mesh_changed.in_set(GameSet::Spawn),
             (debug_rail_path, debug_rail_intersections)
+                .in_set(GameSet::Update)
                 .run_if(in_player_state(PlayerState::Building)),
         ),
     );
@@ -547,9 +546,10 @@ fn on_rail_mesh_changed(
             for i in [-DISTANCE, DISTANCE] {
                 let mut mesh = SplineMesh::create_mesh();
 
-                let buffers = SplineMesh::create_buffers(&spline, SIZE, SIZE, vec2(i, Y_OFFSET));
+                let buffers =
+                    SplineMesh::create_buffers(&spline, SIZE, SIZE, Vec2::new(i, Y_OFFSET));
                 // Style with thicker rails that go through segments, not sure if I like it though
-                // SplineMesh::create_buffers(&spline, SIZE, SIZE + Y_OFFSET, vec2(i, 0.0));
+                // SplineMesh::create_buffers(&spline, SIZE, SIZE + Y_OFFSET, Vec2::new(i, 0.0));
 
                 mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, buffers.0);
                 mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, buffers.1);

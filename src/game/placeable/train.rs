@@ -1,5 +1,4 @@
 use super::{rail::rail_graph::*, *};
-use crate::spline::Spline;
 use rail::Rail;
 use uuid::Uuid;
 
@@ -13,7 +12,8 @@ pub(super) fn train_plugin(app: &mut App) {
             ),
             move_trains_with_plan,
             calculate_plan,
-        ),
+        )
+            .in_set(GameSet::Update),
     );
 }
 
@@ -241,10 +241,8 @@ fn handle_train_placement(
     mut q: Query<(&mut PlayerCursor, &ActionState<PlayerBuildAction>)>,
     mut preview: Query<(&mut Transform, &mut PlaceablePreview)>,
     rails: Query<&Spline, With<Rail>>,
-    mut gizmos: Gizmos,
     mut ray_cast: MeshRayCast,
     train: Res<TrainAsset>,
-    // spatial_query: SpatialQuery,
     mut feedback: ResMut<CursorFeedback>,
 ) {
     if preview.is_empty() {
@@ -265,14 +263,8 @@ fn handle_train_placement(
             pos = spline.projected_position(t);
             spline_forward = spline.forward(t);
             cursor.manual_rotation = 0.0;
-            gizmos.line(pos, hit.1.point, RED_500);
-            for point in spline.curve_points() {
-                gizmos.sphere(Isometry3d::from_translation(*point), 0.2, RED_500);
-            }
 
-            // Align to closes orientation
             let mut align_to_right = spline_forward.dot(preview.0.forward().as_vec3()) > 0.;
-
             if input.just_pressed(&PlayerBuildAction::Rotate) {
                 align_to_right = !align_to_right;
             }
@@ -290,7 +282,6 @@ fn handle_train_placement(
         spline_forward = Quat::from_rotation_y(cursor.manual_rotation) * spline_forward;
     }
 
-    cursor.manual_rotation = 0.0;
     preview.0.translation = pos;
     preview.0.look_at(pos + spline_forward.as_vec3(), Vec3::Y);
 

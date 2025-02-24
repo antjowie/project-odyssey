@@ -14,7 +14,7 @@
 //!     * EnterViewMode
 //!     * Place
 //!     * Remove
-//!     
+//!
 //! InputContext can be related with states, and we create and destroy them when entering the associated states.
 //! By using this system we can generate a list of actionable inputs based on the current context
 //!
@@ -74,6 +74,7 @@
 
 pub use bevy::prelude::*;
 use bevy::utils::hashbrown::{HashMap, HashSet};
+use bevy_egui::EguiContexts;
 pub use leafwing_input_manager::{
     clashing_inputs::BasicInputs, plugin::InputManagerSystem, prelude::*,
 };
@@ -164,6 +165,7 @@ impl<A: InputContextlike + TypePath + bevy::reflect::GetTypeRegistration> Plugin
                 collect_input_context_entries::<A>
                     .run_if(resource_changed::<AllInputContextEntries>)
                     .in_set(InputSet::CollectEntries),
+                filter_input_for_ui::<A>.before(InputManagerSystem::ManualControl),
             ),
         );
     }
@@ -452,4 +454,18 @@ fn update_input_display_text(
         });
     });
     // info!("-- Updating input display data DONE");
+}
+
+fn filter_input_for_ui<A: InputContextlike>(
+    mut q: Query<&mut ActionState<A>>,
+    mut ctx: EguiContexts,
+) {
+    let ctx = ctx.ctx_mut();
+    q.iter_mut().for_each(|mut state| {
+        if ctx.wants_pointer_input() || ctx.wants_keyboard_input() {
+            state.disable();
+        } else {
+            state.enable();
+        }
+    });
 }

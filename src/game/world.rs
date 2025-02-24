@@ -49,7 +49,7 @@ fn spawn_test_world(
             shadows_enabled: true,
             ..default()
         },
-        Transform::from_xyz(0.0, 0.0, 0.0).looking_at(Vec3::new(-0.15, -0.05, 0.25), Vec3::Y),
+        Transform::from_xyz(0.0, 0.0, 0.0).looking_at(Vec3::new(-0.10, -0.05, 0.05), Vec3::Y),
     ));
 
     c.spawn((

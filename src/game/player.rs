@@ -7,7 +7,9 @@ pub(super) fn player_plugin(app: &mut App) {
     app.add_event::<PlayerStateChangedEvent>();
     app.add_systems(
         PreUpdate,
-        update_cursor.in_set(InputManagerSystem::ManualControl).run_if(any_with_component::<PrimaryWindow>),
+        update_cursor
+            .in_set(InputManagerSystem::ManualControl)
+            .run_if(any_with_component::<PrimaryWindow>),
     );
     app.add_systems(
         Update,
@@ -15,7 +17,8 @@ pub(super) fn player_plugin(app: &mut App) {
             setup_player_state.run_if(any_with_component::<PlayerState>),
             handle_view_state_input.run_if(any_with_component::<ActionState<PlayerViewAction>>),
             handle_build_state_input.run_if(any_with_component::<ActionState<PlayerBuildAction>>),
-        ),
+        )
+            .in_set(GameSet::Update),
     );
 }
 
@@ -26,6 +29,7 @@ pub enum PlayerViewAction {
     PickHovered,
     PickRail,
     PickTrain,
+    PickStation,
     PickDestroy,
     Interact,
     ExitGame,
@@ -37,6 +41,7 @@ impl InputContextlike for PlayerViewAction {
             .with(PlayerViewAction::PickHovered, KeyCode::KeyQ)
             .with(PlayerViewAction::PickRail, KeyCode::Digit1)
             .with(PlayerViewAction::PickTrain, KeyCode::Digit2)
+            .with(PlayerViewAction::PickStation, KeyCode::Digit3)
             .with(PlayerViewAction::PickDestroy, KeyCode::KeyX)
             .with(PlayerViewAction::Interact, MouseButton::Left)
             .with(PlayerViewAction::ExitGame, KeyCode::Escape)
@@ -54,6 +59,7 @@ pub enum PlayerBuildAction {
     PickHovered,
     PickRail,
     PickTrain,
+    PickStation,
     PickDestroy,
     Interact,
     Cancel,
@@ -72,6 +78,7 @@ impl InputContextlike for PlayerBuildAction {
             .with(PlayerBuildAction::PickHovered, KeyCode::KeyQ)
             .with(PlayerBuildAction::PickRail, KeyCode::Digit1)
             .with(PlayerBuildAction::PickTrain, KeyCode::Digit2)
+            .with(PlayerBuildAction::PickStation, KeyCode::Digit3)
             .with(PlayerBuildAction::PickDestroy, KeyCode::KeyX)
             .with(PlayerBuildAction::Interact, MouseButton::Left)
             .with(PlayerBuildAction::Cancel, KeyCode::KeyE)
@@ -317,6 +324,7 @@ fn handle_view_state_input(
             };
             handle(PlayerViewAction::PickRail, Placeable::Rail);
             handle(PlayerViewAction::PickTrain, Placeable::Train);
+            handle(PlayerViewAction::PickStation, Placeable::Station);
             handle(PlayerViewAction::PickDestroy, Placeable::Destroyer);
 
             if input.just_pressed(&PlayerViewAction::ExitGame) {
