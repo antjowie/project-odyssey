@@ -327,6 +327,7 @@ fn handle_view_state_input(
             handle(PlayerViewAction::PickStation, Placeable::Station);
             handle(PlayerViewAction::PickDestroy, Placeable::Destroyer);
 
+            #[cfg(not(target_arch = "wasm32"))]
             if input.just_pressed(&PlayerViewAction::ExitGame) {
                 ev_exit.send(AppExit::Success);
             }

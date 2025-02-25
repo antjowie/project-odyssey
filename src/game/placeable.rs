@@ -23,6 +23,7 @@ pub(super) fn placeable_plugin(app: &mut App) {
         Update,
         (
             (
+                update_placeable_preview_on_rail_transform,
                 pick_hovered_placeable,
                 update_picked_placeable.run_if(in_player_state(PlayerState::Building)),
                 (
@@ -161,6 +162,7 @@ fn on_placeable_preview_changed_event(
                     Name::new("TrainPreview"),
                     Placeable::Train,
                     PlaceablePreview::new(e_player),
+                    PlaceablePreviewOnRail::new(true),
                     SceneRoot(train.scene.clone()),
                     t.unwrap_or_default().with_scale(train.scale),
                 ));
@@ -170,6 +172,7 @@ fn on_placeable_preview_changed_event(
                     Name::new("StationPreview"),
                     Placeable::Station,
                     PlaceablePreview::new(e_player),
+                    PlaceablePreviewOnRail::new(false),
                     SceneRoot(station.scene.clone()),
                     t.unwrap_or_default().with_scale(station.scale),
                 ));
@@ -302,4 +305,85 @@ fn pick_hovered_placeable(
             });
         }
     }
+}
+#[derive(Component)]
+pub struct PlaceablePreviewGeneric;
+
+#[derive(Component)]
+pub struct PlaceablePreviewOnRail {
+    pub place_on_rail: bool,
+    pub rail: Option<Entity>,
+    pub t: f32,
+}
+
+impl PlaceablePreviewOnRail {
+    pub fn new(place_on_rail: bool) -> Self {
+        Self {
+            place_on_rail,
+            rail: None,
+            t: 0.0,
+        }
+    }
+}
+
+fn _update_placeable_preview_generic() {
+    // Empty for now since rail_planner is the only place where we have placeable not on rail
+}
+
+fn update_placeable_preview_on_rail_transform(
+    mut q: Query<(&mut PlayerCursor, &ActionState<PlayerBuildAction>)>,
+    mut preview: Query<(&mut Transform, &mut PlaceablePreviewOnRail)>,
+    rails: Query<&Spline, With<Rail>>,
+    mut ray_cast: MeshRayCast,
+) {
+    if preview.is_empty() {
+        return;
+    }
+    let mut preview = preview.single_mut();
+
+    let (mut cursor, input) = q.single_mut();
+    let mut pos = cursor.build_pos;
+    let mut spline_forward = preview.0.forward();
+    let mut target_rail = None;
+
+    let hit = get_closest_rail(cursor.ray, &mut ray_cast, &rails);
+    let mut t = 0.0;
+    if let Some(hit) = &hit {
+        if let Ok(spline) = rails.get(hit.0) {
+            t = spline.t_from_pos(&pos);
+
+            pos = if preview.1.place_on_rail {
+                spline.projected_position(t)
+            } else {
+                spline.position(t)
+            };
+            spline_forward = spline.forward(t);
+            cursor.manual_rotation = 0.0;
+
+            let mut align_to_right = spline_forward.dot(preview.0.forward().as_vec3()) > 0.;
+            if input.just_pressed(&PlayerBuildAction::Rotate) {
+                align_to_right = !align_to_right;
+            }
+
+            spline_forward = if align_to_right {
+                spline_forward
+            } else {
+                Dir3::new(spline_forward.as_vec3() * -1.0).unwrap()
+            };
+
+            target_rail = Some(hit.0);
+        }
+    } else {
+        spline_forward = Quat::from_rotation_y(cursor.manual_rotation) * spline_forward;
+    }
+    // Rotation has been applied, reset it
+    cursor.manual_rotation = 0.0;
+
+    preview.0.translation = pos;
+    preview.0.look_at(pos + spline_forward.as_vec3(), Vec3::Y);
+    *preview.1 = PlaceablePreviewOnRail {
+        rail: target_rail,
+        t,
+        ..*preview.1
+    };
 }

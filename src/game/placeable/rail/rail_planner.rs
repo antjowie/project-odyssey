@@ -7,18 +7,23 @@ use std::f32::consts::FRAC_PI_2;
 pub fn rail_planner_plugin(app: &mut App) {
     app.add_systems(
         Update,
-        ((
-            update_intitial_rail_planner.run_if(not(any_with_component::<RailPlanner>)),
-            update_rail_planner_feedback.run_if(any_with_component::<RailPlanner>),
-            update_rail_planner,
-            draw_rail_planner,
+        (
+            (
+                update_rail_planner_feedback.run_if(any_with_component::<RailPlanner>),
+                draw_rail_planner,
+            )
+                .in_set(GameSet::Update),
+            (
+                update_intitial_rail_planner.run_if(not(any_with_component::<RailPlanner>)),
+                update_rail_planner,
+            )
+                .in_set(GameSet::Spawn),
         )
-            .in_set(GameSet::Update)
             .run_if(
                 // We use any with compnent as we assume it exists on some of the funcs
                 any_with_component::<InputContext<PlayerBuildAction>>
                     .and(is_placeable_preview(Placeable::Rail)),
-            ),),
+            ),
     );
 }
 

@@ -31,7 +31,7 @@ fn spawn_test_world(
             falloff: FogFalloff::from_visibility_colors(
                 PanOrbitCameraSettings::default().max_radius * 5.0, // distance in world units up to which objects retain visibility (>= 5% contrast)
                 Color::srgb(0.35, 0.5, 0.66), // atmospheric extinction color (after light is lost due to absorption by atmospheric particles)
-                Color::srgb(0.8, 0.844, 1.0), // atmospheric inscattering color (light gained due to scattering from the sun)
+                Srgba::hex("#C3EEFA").unwrap().into(), // atmospheric inscattering color (light gained due to scattering from the sun)
             ),
         },
     ));
@@ -49,14 +49,14 @@ fn spawn_test_world(
             shadows_enabled: true,
             ..default()
         },
-        Transform::from_xyz(0.0, 0.0, 0.0).looking_at(Vec3::new(-0.10, -0.05, 0.05), Vec3::Y),
+        Transform::from_xyz(0.0, 0.0, 0.0).looking_at(Vec3::new(-0.8, -0.5, 0.65), Vec3::Y),
     ));
 
     c.spawn((
         Name::new("Skybox"),
         Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
         MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Srgba::hex("888888").unwrap().into(),
+            base_color: Color::srgb(0.529, 0.808, 0.922),
             unlit: true,
             cull_mode: None,
             ..default()
@@ -75,7 +75,12 @@ fn spawn_test_world(
     .with_children(|parent| {
         const SIZE: f32 = 1_000.0;
         let mesh_handle = meshes.add(Plane3d::new(Vec3::Y, Vec2::splat(SIZE)));
-        let material_handle = materials.add(Color::WHITE);
+        // Slight grey-beige color for a natural looking ground
+
+        let concrete_color = Color::srgb(0.75, 0.74, 0.72);
+        // let dirt_color = Color::srgb(0.60, 0.51, 0.39);
+        // let grass_color = Color::srgb(0.45, 0.55, 0.35);
+        let material_handle = materials.add(concrete_color);
         for x in -10..=10 {
             for z in -10..=10 {
                 parent.spawn((

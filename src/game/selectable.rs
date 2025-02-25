@@ -11,7 +11,8 @@ pub(super) fn selectable_plugin(app: &mut App) {
             on_selected_changed_event.run_if(on_event::<SelectedChangedEvent>),
             handle_selected_input_in_view_state.run_if(not(on_event::<SelectedChangedEvent>)),
         )
-            .in_set(GameSet::Update),
+            .in_set(GameSet::Update)
+            .run_if(in_player_state(PlayerState::Viewing)),
     );
 }
 
@@ -88,33 +89,40 @@ fn on_selected_changed_event(
 ) {
     for e in ev.read() {
         let e = e.0;
+        // Check if we didn't select the same entity (so a different entity or none)
         if selected.selected != e {
+            // For the old entity, remove the components
             if let Some(e) = selected.selected {
-                let mut handle = |entity| {
-                    if let Ok((mut mat, orig)) = q.get_mut(entity) {
-                        mat.0 = orig.unwrap().0.clone();
-                        c.entity(entity).remove::<SelectedOriginalMaterial>();
-                    }
-                };
+                if c.get_entity(e).is_some() {
+                    let mut handle = |entity| {
+                        if let Ok((mut mat, orig)) = q.get_mut(entity) {
+                            mat.0 = orig.unwrap().0.clone();
+                            c.entity(entity).remove::<SelectedOriginalMaterial>();
+                        }
+                    };
 
-                handle(e);
-                children.iter_descendants(e).for_each(handle);
+                    handle(e);
+                    children.iter_descendants(e).for_each(handle);
 
-                c.entity(e).remove::<Selected>();
+                    c.entity(e).remove::<Selected>();
+                }
             }
             selected.selected = e;
+            // For the new entity, add the components
             if let Some(e) = selected.selected {
-                let mut handle = |entity| {
-                    if let Ok((mut mat, _orig)) = q.get_mut(entity) {
-                        c.entity(entity)
-                            .insert(SelectedOriginalMaterial(mat.0.clone()));
-                        mat.0 = material.0.clone();
-                    }
-                };
+                if c.get_entity(e).is_some() {
+                    let mut handle = |entity| {
+                        if let Ok((mut mat, _orig)) = q.get_mut(entity) {
+                            c.entity(entity)
+                                .insert(SelectedOriginalMaterial(mat.0.clone()));
+                            mat.0 = material.0.clone();
+                        }
+                    };
 
-                handle(e);
-                children.iter_descendants(e).for_each(handle);
-                c.entity(e).insert(Selected);
+                    handle(e);
+                    children.iter_descendants(e).for_each(handle);
+                    c.entity(e).insert(Selected);
+                }
             }
         }
     }
